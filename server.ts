@@ -40,7 +40,7 @@ async function startServer() {
     return aiClient;
   }
 
-  // Invoice OCR & Analysis API Endpoint using Gemini 3.8 Flash
+  // Invoice OCR & Analysis API Endpoint using a vision-capable Gemini model
   app.post('/api/gemini/analyze-invoice', async (req, res) => {
     try {
       const { image, mimeType, existingProducts, existingSuppliers } = req.body;
@@ -48,66 +48,18 @@ async function startServer() {
         return res.status(400).json({ error: 'يرجى إرسال صورة الفاتورة المراد تحليلها.' });
       }
 
-      // Extract raw base64 data and mime type
-      const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
-      let detectedMime = mimeType || 'image/jpeg';
-      if (image.startsWith('data:')) {
-        const match = image.match(/^data:([^;]+);base64,/);
-        if (match && match[1]) {
-          detectedMime = match[1];
-        }
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(503).json({ error: 'تحليل الصور غير متاح حاليًا. لم يتم تفعيل مزود تحليل الصور.' });
       }
 
-      // Check if Gemini API key exists
-      if (!process.env.GEMINI_API_KEY) {
-        // Provide an intelligent, realistic demo simulation if API key is not configured
-        return res.json({
-          simulated: true,
-          supplier_name: 'شركة المتطورة لتجارة وتوزيع الأدوية',
-          invoice_number: 'INV-2026-' + Math.floor(1000 + Math.random() * 9000),
-          invoice_date: new Date().toISOString().split('T')[0],
-          payment_type: 'credit',
-          total_amount: 87500,
-          items: [
-            {
-              raw_name: 'Panadol Extra 500mg (24 Tab)',
-              product_name_ar: 'بنادول اكسترا 500 مجم (24 قرص)',
-              product_name_en: 'Panadol Extra 500mg Tablets',
-              batch_number: 'BN-8821P',
-              expiry_date: '2027-11-30',
-              quantity: 20,
-              unit_name: 'باكت',
-              unit_purchase_price: 1800,
-              unit_selling_price: 2400,
-              discount_amount: 0,
-            },
-            {
-              raw_name: 'Amoxil 500mg Capsules (20s)',
-              product_name_ar: 'اموكسيل 500 مجم كبسول',
-              product_name_en: 'Amoxil 500mg Caps',
-              batch_number: 'BN-4019A',
-              expiry_date: '2027-08-31',
-              quantity: 15,
-              unit_name: 'باكت',
-              unit_purchase_price: 2500,
-              unit_selling_price: 3300,
-              discount_amount: 0,
-            },
-            {
-              raw_name: 'Cataflam 50mg (20 Tab)',
-              product_name_ar: 'كتافلام 50 مجم أقراص مسكنة',
-              product_name_en: 'Cataflam 50mg Tablets',
-              batch_number: 'BN-9092C',
-              expiry_date: '2028-01-31',
-              quantity: 10,
-              unit_name: 'باكت',
-              unit_purchase_price: 1400,
-              unit_selling_price: 1950,
-              discount_amount: 0,
-            },
-          ],
-        });
+      // Extract raw base64 data and mime type
+      const dataUrlMatch = image.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,(.+)$/);
+      if (!dataUrlMatch) {
+        return res.status(400).json({ error: 'الصورة غير مدعومة. أرسل صورة JPG أو PNG أو WEBP.' });
       }
+      const base64Data = dataUrlMatch[2];
+      let detectedMime = mimeType || 'image/jpeg';
+      if (!/^image\/(jpeg|png|webp|gif)$/.test(detectedMime)) detectedMime = dataUrlMatch[1];
 
       const ai = getAI();
       const prompt = `أنت خبير صيدلاني وأنظمة إدارة الصيدليات (Pharmacy ERP).
@@ -143,7 +95,7 @@ ${JSON.stringify((existingProducts || []).slice(0, 60).map((p: any) => ({ id: p.
 أرجع فقط كائن JSON صحيح وبدون أي نصوص إضافية أو كتل Markdown.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-2.5-flash',
         contents: {
           parts: [
             {
