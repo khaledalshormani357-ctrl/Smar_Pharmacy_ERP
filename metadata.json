@@ -1,0 +1,10 @@
+{
+  "name": "Smart Pharmacy ERP",
+  "description": "نظام إدارة الصيدليات الذكي المتكامل - نقطة بيع POS، إدارة المخزون والدفعات FEFO، المشتريات والعمليات المالية الصيدلانية",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

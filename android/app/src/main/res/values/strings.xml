@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Smart Pharmacy ERP</string>
+    <string name="title_activity_main">Smart Pharmacy ERP</string>
+    <string name="package_name">com.smartpharmacy.erp</string>
+    <string name="custom_url_scheme">com.smartpharmacy.erp</string>
+</resources>
