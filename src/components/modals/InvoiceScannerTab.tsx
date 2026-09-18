@@ -22,6 +22,7 @@ import { db } from '../../db/sqlite';
 import { PurchaseService } from '../../services/PurchaseService';
 import { Money } from '../../utils/money';
 import { Product, Supplier } from '../../types';
+import { classifyImageAnalysisError, readFileAsDataUrl, validateAnalysisImage, withTimeout } from '../../utils/phase82';
 
 interface ExtractedItem {
   id: string;
@@ -58,6 +59,7 @@ export const InvoiceScannerTab: React.FC = () => {
 
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisState, setAnalysisState] = useState<'idle' | 'selected' | 'analyzing' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [invoiceData, setInvoiceData] = useState<ExtractedInvoice | null>(null);
   const [postingSuccess, setPostingSuccess] = useState<{ invoiceId: string; invoiceNumber: string; totalAmount: number } | null>(null);
@@ -70,19 +72,27 @@ export const InvoiceScannerTab: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      setError('يرجى اختيار ملف صورة صالح (JPG, PNG, WEBP).');
+    const validationError = validateAnalysisImage(file);
+    if (validationError) {
+      setImageSrc(null);
+      setAnalysisState('error');
+      setError(validationError);
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImageSrc(reader.result as string);
+    readFileAsDataUrl(file).then((dataUrl) => {
+      setImageSrc(dataUrl);
+      setAnalysisState('selected');
       setError(null);
       setInvoiceData(null);
       setPostingSuccess(null);
-    };
-    reader.readAsDataURL(file);
+    }).catch((uploadError) => {
+      setImageSrc(null);
+      setAnalysisState('error');
+      setError(classifyImageAnalysisError(uploadError));
+    }).finally(() => {
+      e.target.value = '';
+    });
   };
 
   // Sample Invoices for quick test
@@ -194,12 +204,13 @@ export const InvoiceScannerTab: React.FC = () => {
     }
 
     setAnalyzing(true);
+    setAnalysisState('analyzing');
     setError(null);
     setInvoiceData(null);
     setPostingSuccess(null);
 
     try {
-      const response = await fetch('/api/gemini/analyze-invoice', {
+      const response = await withTimeout(fetch('/api/gemini/analyze-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -216,7 +227,7 @@ export const InvoiceScannerTab: React.FC = () => {
             name: s.name
           }))
         })
-      });
+      }), 90_000);
 
       if (!response.ok) {
         const errJson = await response.json().catch(() => ({}));
@@ -224,6 +235,9 @@ export const InvoiceScannerTab: React.FC = () => {
       }
 
       const rawResult = await response.json();
+      if (rawResult.simulated) {
+        throw new Error('تحليل الصور غير متاح حاليًا. لم يتم تفعيل مزود تحليل الصور.');
+      }
 
       // Normalize items
       const rawItems: any[] = Array.isArray(rawResult.items) ? rawResult.items : [];
@@ -288,8 +302,10 @@ export const InvoiceScannerTab: React.FC = () => {
         items: normalizedItems,
         simulated: !!rawResult.simulated
       });
+      setAnalysisState('success');
     } catch (err: any) {
-      setError(err.message || 'تعذر تحليل صورة الفاتورة. يرجى التأكد من وضوح الصورة والمحاولة مرة أخرى.');
+      setAnalysisState('error');
+      setError(classifyImageAnalysisError(err));
     } finally {
       setAnalyzing(false);
     }
