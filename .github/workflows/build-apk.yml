@@ -5,6 +5,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Android APK
@@ -14,10 +17,10 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js (v22 LTS)
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install Web Dependencies
@@ -39,16 +42,37 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android Licenses
+        run: yes | sdkmanager --licenses || true
+
       - name: Make Gradlew Executable
         run: chmod +x ./android/gradlew
 
       - name: Build Debug APK
-        run: ./android/gradlew -p android assembleDebug
+        run: ./android/gradlew -p android assembleDebug --stacktrace
+
+      - name: Prepare APK for Artifact & Release
+        run: |
+          mkdir -p release-apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk release-apk/SmartPharmacy.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SmartPharmacy-Debug-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: SmartPharmacy-APK
+          path: release-apk/SmartPharmacy.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Create GitHub Release with Direct APK Download
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: v1.0.0-apk
+          name: "Smart Pharmacy ERP - APK v1.0.0"
+          body: "تطبيق نظام الصيدلية الذكي بصيغة APK جاهز للتحميل والتثبيت المباشر على جميع هواتف وأجهزة أندرويد."
+          files: release-apk/SmartPharmacy.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
