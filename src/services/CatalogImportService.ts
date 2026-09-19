@@ -110,6 +110,8 @@ export class CatalogImportService {
     skippedDuplicates: number;
   }> {
     const seed = await this.loadSeedData();
+    const batchSize = Math.max(25, options?.batchSize || 200);
+    return db.transactionAsync(async () => {
     const state = db.getState();
 
     let importedProducts = 0;
@@ -123,7 +125,8 @@ export class CatalogImportService {
     );
     const existingCategoryIds = new Set(state.categories.map((c) => c.id));
 
-    for (const cat of seed.categories) {
+    for (let catIndex = 0; catIndex < seed.categories.length; catIndex++) {
+      const cat = seed.categories[catIndex];
       const nameKey = (cat.name_en || cat.name_ar || '').toLowerCase().trim();
       if (!existingCategoryIds.has(cat.id) && !existingCategoryNames.has(nameKey)) {
         state.categories.push({
@@ -142,7 +145,8 @@ export class CatalogImportService {
     const existingMfgNames = new Set(state.manufacturers.map((m) => m.name_ar.toLowerCase().trim()));
     const existingMfgIds = new Set(state.manufacturers.map((m) => m.id));
 
-    for (const mfg of seed.manufacturers) {
+    for (let mfgIndex = 0; mfgIndex < seed.manufacturers.length; mfgIndex++) {
+      const mfg = seed.manufacturers[mfgIndex];
       const nameKey = mfg.name_ar.toLowerCase().trim();
       if (!existingMfgIds.has(mfg.id) && !existingMfgNames.has(nameKey)) {
         state.manufacturers.push({
@@ -188,12 +192,15 @@ export class CatalogImportService {
         importedProducts++;
       }
 
-      if (options?.onProgress && (i % 200 === 0 || i === totalToProcess - 1)) {
+      if (options?.onProgress && (i % batchSize === 0 || i === totalToProcess - 1)) {
         options.onProgress({
           imported: importedProducts,
           total: totalToProcess,
           percent: Math.round(((i + 1) / totalToProcess) * 100)
         });
+      }
+      if ((i + 1) % batchSize === 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
     }
 
@@ -220,5 +227,6 @@ export class CatalogImportService {
       importedManufacturers,
       skippedDuplicates
     };
+    });
   }
 }

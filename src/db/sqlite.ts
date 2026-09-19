@@ -149,6 +149,21 @@ export class SQLiteEngine {
     }
   }
 
+  public async transactionAsync<T>(callback: () => Promise<T>): Promise<T> {
+    const backup = JSON.parse(JSON.stringify(this.state));
+    try {
+      const result = await callback();
+      TransactionManager.verifyForeignKeys(this.state);
+      this.notify();
+      return result;
+    } catch (error) {
+      console.error('Async transaction rollback triggered due to error:', error);
+      Object.keys(this.state).forEach((k) => delete (this.state as any)[k]);
+      Object.assign(this.state, backup);
+      throw error;
+    }
+  }
+
   private loadInitialState(): DatabaseState {
     let state: DatabaseState;
     try {

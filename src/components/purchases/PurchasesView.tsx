@@ -55,6 +55,7 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
 
   // Item selector in modal
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [productQuery, setProductQuery] = useState('');
   const [batchNo, setBatchNo] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [qty, setQty] = useState(1);
@@ -75,6 +76,24 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
     setSuppliers(state.suppliers.filter((s) => s.is_active));
     setProducts(state.products.filter((p) => p.is_active));
   };
+
+  const normalizeSearch = (value: string) => value
+    .toLocaleLowerCase('ar')
+    .replace(/[إأآا]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[\u064B-\u065F]/g, '')
+    .trim();
+
+  const productMatches = products.filter((product) => {
+    const query = normalizeSearch(productQuery);
+    if (!query) return true;
+    const manufacturerName = db.getState().manufacturers.find((m) => m.id === product.manufacturer_id)?.name_ar;
+    return [product.name_ar, product.name_en, product.generic_name, product.active_ingredient, manufacturerName,
+      product.internal_code, product.code, product.barcode]
+      .filter(Boolean)
+      .some((field) => normalizeSearch(String(field)).includes(query));
+  }).slice(0, 40);
 
   const handleAddItem = () => {
     if (!selectedProductId || !batchNo.trim() || !expiryDate || qty <= 0) {
@@ -324,26 +343,33 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
                 <span className="font-bold text-slate-800 block">إضافة صنف للشحنة</span>
 
-                <div>
-                  <select
-                    value={selectedProductId}
-                    onChange={(e) => {
-                      setSelectedProductId(e.target.value);
-                      const p = products.find((x) => x.id === e.target.value);
-                      if (p) {
-                        setPPrice(Money.toMajor(p.current_purchase_price));
-                        setSPrice(Money.toMajor(p.current_selling_price));
-                      }
-                    }}
+                <div className="space-y-1.5">
+                  <input
+                    type="search"
+                    value={productQuery}
+                    onChange={(e) => setProductQuery(e.target.value)}
+                    placeholder="ابحث بالاسم التجاري أو العلمي أو المادة أو الشركة أو الباركود..."
                     className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-xl"
-                  >
-                    <option value="">-- اختر الدواء --</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name_ar} ({p.internal_code})
-                      </option>
+                  />
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {productMatches.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedProductId(p.id);
+                          setProductQuery(p.name_ar);
+                          setPPrice(Money.toMajor(p.current_purchase_price));
+                          setSPrice(Money.toMajor(p.current_selling_price));
+                        }}
+                        className={`w-full text-right px-2.5 py-2 rounded-lg border text-[11px] ${selectedProductId === p.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}
+                      >
+                        <strong>{p.name_ar}</strong> <span className="text-slate-500">{p.name_en || p.generic_name || ''}</span>
+                        <span className="block text-[10px] text-slate-400">{p.active_ingredient || ''} • {db.getState().manufacturers.find((m) => m.id === p.manufacturer_id)?.name_ar || ''} • {p.barcode || p.internal_code}</span>
+                      </button>
                     ))}
-                  </select>
+                    {productMatches.length === 0 && <p className="p-2 text-[11px] text-slate-400">لا توجد نتائج مطابقة.</p>}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">

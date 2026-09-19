@@ -24,6 +24,7 @@ import { ProductCardView } from './ProductCardView';
 import { BalanceCardView } from './BalanceCardView';
 import { ConfirmationCard } from './ConfirmationCard';
 import { User } from '../../types';
+import { db } from '../../db/sqlite';
 
 interface CopilotChatTabProps {
   currentUser: User;
@@ -49,6 +50,7 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
   ]);
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [lastFailedQuery, setLastFailedQuery] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -116,24 +118,62 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
 
     setMessages((prev) => [...prev, userMsg]);
     setIsProcessing(true);
+    setLastFailedQuery(null);
 
     try {
-      const response = await AssistantOrchestrator.processMessage(query, context);
-      setMessages((prev) => [...prev, response]);
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 45000);
+      const state = db.getState();
+      const result = await fetch('/api/assistant/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          messages: [...messages, userMsg].map((message) => ({ role: message.sender, text: message.text })),
+          context: {
+            currentScreen,
+            userRole: currentUser.role_id,
+            productsCount: state.products.length,
+            suppliersCount: state.suppliers.length,
+            customersCount: state.customers.length,
+            purchasesCount: state.purchases.length,
+            salesCount: state.sales.length,
+            online: context.isOnline
+          }
+        })
+      });
+      window.clearTimeout(timeout);
+      const payload = await result.json().catch(() => ({}));
+      if (!result.ok || typeof payload.text !== 'string' || !payload.text.trim()) {
+        throw new Error(payload.error || 'تعذر الحصول على رد صالح من مزود الذكاء الاصطناعي.');
+      }
+      setMessages((prev) => [...prev, {
+        id: 'ai-' + Date.now(),
+        sender: 'assistant',
+        timestamp: Date.now(),
+        text: payload.text,
+        responseType: 'TEXT'
+      }]);
     } catch (err: any) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: 'err-' + Date.now(),
-          sender: 'assistant',
-          timestamp: Date.now(),
-          text: `عذراً، حدث خطأ أثناء معالجة الطلب: ${err.message}`,
-          responseType: 'ERROR'
-        }
-      ]);
+      const reason = err?.name === 'AbortError'
+        ? 'انتهت مهلة انتظار المساعد الذكي. تحقق من الاتصال ثم أعد المحاولة.'
+        : (err?.message || 'تعذر الاتصال بالمساعد الذكي.');
+      setLastFailedQuery(query);
+      setMessages((prev) => [...prev, {
+        id: 'err-' + Date.now(),
+        sender: 'assistant',
+        timestamp: Date.now(),
+        text: reason,
+        responseType: 'ERROR',
+        data: { errorReason: reason, retryQuery: query }
+      }]);
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleRetry = () => {
+    if (lastFailedQuery) handleSendMessage(lastFailedQuery);
   };
 
   const handleConfirmAction = async (operationKey: string) => {
@@ -322,6 +362,11 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
                     <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                     <div className="text-2xs font-medium leading-relaxed">
                       {msg.data?.errorReason || msg.text}
+                      {msg.data?.retryQuery && (
+                        <button type="button" onClick={handleRetry} className="block mt-2 px-2.5 py-1.5 rounded-lg bg-rose-600 text-white font-bold">
+                          إعادة المحاولة
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

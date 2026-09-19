@@ -20,6 +20,39 @@ async function startServer() {
     res.json({ status: 'ok', timestamp: Date.now() });
   });
 
+  app.post('/api/assistant/chat', async (req, res) => {
+    try {
+      const { messages, context } = req.body || {};
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(503).json({ error: 'المساعد الذكي غير متاح حاليًا: لم يتم تفعيل مزود الذكاء الاصطناعي.' });
+      }
+      if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: 'يرجى إرسال سؤال للمساعد.' });
+      }
+      const ai = getAI();
+      const safeMessages = messages.slice(-12).map((message: any) => ({
+        role: message.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: String(message.text || '').slice(0, 4000) }]
+      }));
+      const systemInstruction = `أنت مساعد صيدلي داخل نظام Smart Pharmacy ERP. أجب بالعربية الواضحة وباختصار مفيد.
+لا تخترع أرصدة أو مبيعات أو مشتريات أو بيانات مرضى؛ استخدم فقط السياق المرسل، وإذا لم توجد البيانات قل ذلك صراحة.
+لا تخترع جرعات أو تشخيصات أو تداخلات أو بدائل علاجية. المعلومات الدوائية العامة إرشادية وليست قرارًا علاجيًا.
+لا تنفذ أي تعديل مالي أو مخزني من خلال الدردشة.
+سياق التطبيق الحالي: ${JSON.stringify(context || {})}`;
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: safeMessages,
+        config: { systemInstruction, temperature: 0.2, maxOutputTokens: 1200 }
+      });
+      const text = (response.text || '').trim();
+      if (!text) return res.status(502).json({ error: 'عاد مزود الذكاء الاصطناعي برد فارغ.' });
+      return res.json({ text, provider: 'gemini', model: 'gemini-2.5-flash' });
+    } catch (err: any) {
+      console.error('Assistant provider error:', err?.message || 'unknown');
+      return res.status(502).json({ error: 'تعذر الاتصال بخدمة المساعد الذكي. حاول مرة أخرى.' });
+    }
+  });
+
   // Lazy initialization for Gemini client
   let aiClient: GoogleGenAI | null = null;
   function getAI(): GoogleGenAI {

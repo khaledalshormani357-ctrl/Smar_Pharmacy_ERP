@@ -241,6 +241,9 @@ export const InvoiceScannerTab: React.FC = () => {
 
       // Normalize items
       const rawItems: any[] = Array.isArray(rawResult.items) ? rawResult.items : [];
+      if (rawItems.length === 0) {
+        throw new Error('عاد مزود تحليل الصور دون أصناف قابلة للقراءة.');
+      }
       const normalizedItems: ExtractedItem[] = rawItems.map((it, idx) => {
         // Auto-match with existing product if not already matched
         let matchedId = it.matched_product_id;
@@ -258,11 +261,11 @@ export const InvoiceScannerTab: React.FC = () => {
 
         const purchasePrice = typeof it.unit_purchase_price === 'number'
           ? it.unit_purchase_price
-          : parseFloat(String(it.unit_purchase_price || '0').replace(/[^0-9.]/g, '')) || 1000;
+          : parseFloat(String(it.unit_purchase_price || '0').replace(/[^0-9.]/g, '')) || 0;
 
         const sellingPrice = typeof it.unit_selling_price === 'number'
           ? it.unit_selling_price
-          : parseFloat(String(it.unit_selling_price || '0').replace(/[^0-9.]/g, '')) || Math.round(purchasePrice * 1.3);
+          : parseFloat(String(it.unit_selling_price || '0').replace(/[^0-9.]/g, '')) || 0;
 
         return {
           id: 'ext-' + idx + '-' + Math.random().toString(36).substring(2, 6),
@@ -271,10 +274,10 @@ export const InvoiceScannerTab: React.FC = () => {
           product_name_en: it.product_name_en || '',
           matched_product_id: matchedId,
           is_new_product: !matchedId,
-          batch_number: it.batch_number || `BN-${Math.floor(10000 + Math.random() * 90000)}`,
-          expiry_date: it.expiry_date || new Date(Date.now() + 365 * 2 * 86400000).toISOString().split('T')[0],
-          quantity: Math.max(1, parseInt(String(it.quantity || 1), 10)),
-          unit_name: it.unit_name || 'باكت',
+          batch_number: it.batch_number || '',
+          expiry_date: it.expiry_date || '',
+          quantity: Math.max(0, parseInt(String(it.quantity || 0), 10)),
+          unit_name: it.unit_name || '',
           unit_purchase_price: purchasePrice,
           unit_selling_price: sellingPrice,
           discount_amount: it.discount_amount || 0
@@ -300,7 +303,7 @@ export const InvoiceScannerTab: React.FC = () => {
         payment_type: rawResult.payment_type === 'cash' ? 'cash' : 'credit',
         total_amount: rawResult.total_amount,
         items: normalizedItems,
-        simulated: !!rawResult.simulated
+        simulated: false
       });
       setAnalysisState('success');
     } catch (err: any) {

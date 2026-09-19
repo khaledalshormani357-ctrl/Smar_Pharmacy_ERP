@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { db } from './db/sqlite';
 import { PasswordSecurity } from './utils/security';
 import { AppHeader } from './components/navigation/AppHeader';
@@ -28,6 +30,10 @@ export function App() {
   const [showQuickVoucher, setShowQuickVoucher] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showApkModal, setShowApkModal] = useState(false);
+  const [backToast, setBackToast] = useState('');
+  const navigationRef = useRef({ currentTab, showQuickSearch, showQuickVoucher, showAssistant, showApkModal });
+  const lastBackRef = useRef(0);
+  navigationRef.current = { currentTab, showQuickSearch, showQuickVoucher, showAssistant, showApkModal };
 
   useEffect(() => {
     const unsub = db.subscribe(() => {
@@ -35,6 +41,28 @@ export function App() {
       setCurrentUser(db.getState().users[0]);
     });
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let listener: { remove: () => Promise<void> } | null = null;
+    CapacitorApp.addListener('backButton', () => {
+      const state = navigationRef.current;
+      if (state.showAssistant) return setShowAssistant(false);
+      if (state.showQuickSearch) return setShowQuickSearch(false);
+      if (state.showQuickVoucher) return setShowQuickVoucher(false);
+      if (state.showApkModal) return setShowApkModal(false);
+      if (state.currentTab !== 'dashboard') return setCurrentTab('dashboard');
+      const now = Date.now();
+      if (now - lastBackRef.current < 2000) {
+        CapacitorApp.exitApp();
+      } else {
+        lastBackRef.current = now;
+        setBackToast('اضغط مرة أخرى للخروج');
+        window.setTimeout(() => setBackToast(''), 2000);
+      }
+    }).then((handle) => { listener = handle; });
+    return () => { listener?.remove(); };
   }, []);
 
   const handleUnlock = (e: React.FormEvent) => {
@@ -179,9 +207,9 @@ export function App() {
         />
       )}
       {showApkModal && <ApkDownloadModal isOpen={showApkModal} onClose={() => setShowApkModal(false)} />}
+      {backToast && <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] rounded-xl bg-slate-900 text-white px-4 py-2 text-xs font-bold shadow-xl">{backToast}</div>}
     </div>
   );
 }
 
 export default App;
-
