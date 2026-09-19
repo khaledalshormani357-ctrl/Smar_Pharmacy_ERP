@@ -26,7 +26,9 @@ import {
   AlertTriangle,
   ArrowUpRight,
   ArrowDownLeft,
-  ChevronLeft
+  ChevronLeft,
+  BookOpen,
+  Database
 } from 'lucide-react';
 import { db } from '../../db/sqlite';
 import { Money } from '../../utils/money';
@@ -49,6 +51,7 @@ import { InvoicesArchiveView } from '../more/InvoicesArchiveView';
 import { UsersView } from '../more/UsersView';
 import { ReportsView } from '../more/ReportsView';
 import { DashboardView } from './DashboardView';
+import { CatalogImportModal } from '../modals/CatalogImportModal';
 
 interface QuickServicesViewProps {
   currentUser: User;
@@ -73,6 +76,7 @@ export const QuickServicesView: React.FC<QuickServicesViewProps> = ({ currentUse
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [showInvoicesArchiveModal, setShowInvoicesArchiveModal] = useState(false);
   const [showUsersModal, setShowUsersModal] = useState(false);
+  const [showCatalogModal, setShowCatalogModal] = useState(false);
 
   const state = db.getState();
   const totalCashInBoxes = state.cashboxes.reduce((sum, b) => sum + b.cached_balance, 0);
@@ -285,6 +289,30 @@ export const QuickServicesView: React.FC<QuickServicesViewProps> = ({ currentUse
                 </div>
                 <div className="w-12 h-12 rounded-2xl bg-indigo-100/70 text-indigo-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                   <ClipboardCheck className="w-6 h-6" />
+                </div>
+              </button>
+
+              {/* 7. دليل الأدوية اليمني المعتمد */}
+              <button
+                type="button"
+                onClick={() => setShowCatalogModal(true)}
+                className="group p-4 bg-white hover:bg-emerald-50/50 border border-slate-200/90 hover:border-emerald-300 rounded-3xl transition-all shadow-xs text-right flex items-start justify-between"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-slate-900 group-hover:text-emerald-700 transition-colors">
+                      دليل الأدوية اليمني المعتمد
+                    </span>
+                    <span className="px-2 py-0.5 text-[9px] font-bold bg-emerald-100 text-emerald-800 rounded-full">
+                      4,048 صنف دوائي
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    استعراض واستيراد الأصناف المعتمدة بدقة (معرفات ثابتة وخالية من ابتداع الأسعار)
+                  </p>
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100/70 text-emerald-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Database className="w-6 h-6" />
                 </div>
               </button>
             </div>
@@ -628,6 +656,12 @@ export const QuickServicesView: React.FC<QuickServicesViewProps> = ({ currentUse
           </div>
         </div>
       )}
+
+      {/* Authoritative Drug Catalog Modal */}
+      <CatalogImportModal
+        isOpen={showCatalogModal}
+        onClose={() => setShowCatalogModal(false)}
+      />
     </div>
   );
 };

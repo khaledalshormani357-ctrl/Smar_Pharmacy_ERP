@@ -164,7 +164,20 @@ export function App() {
       {/* Quick Global Modals */}
       {showQuickSearch && <QuickProductSearchModal onClose={() => setShowQuickSearch(false)} />}
       {showQuickVoucher && <QuickVoucherModal onClose={() => setShowQuickVoucher(false)} />}
-      {showAssistant && <SmartAssistantModal onClose={() => setShowAssistant(false)} />}
+      {showAssistant && (
+        <SmartAssistantModal
+          onClose={() => setShowAssistant(false)}
+          currentUser={currentUser}
+          currentScreen={currentTab}
+          onNavigate={(tab) => {
+            if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'more') {
+              setCurrentTab(tab);
+            } else {
+              setCurrentTab('dashboard');
+            }
+          }}
+        />
+      )}
       {showApkModal && <ApkDownloadModal isOpen={showApkModal} onClose={() => setShowApkModal(false)} />}
     </div>
   );

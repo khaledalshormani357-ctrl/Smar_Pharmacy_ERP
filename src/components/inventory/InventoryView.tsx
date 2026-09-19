@@ -13,7 +13,9 @@ import {
   Eye,
   Building,
   FolderTree,
-  DollarSign
+  DollarSign,
+  BookOpen,
+  Database
 } from 'lucide-react';
 import { db } from '../../db/sqlite';
 import { InventoryService } from '../../services/InventoryService';
@@ -24,6 +26,7 @@ import { NumericInput } from '../ui/NumericInput';
 import { ProductDetailsModal } from './ProductDetailsModal';
 import { OpeningStockModal } from './OpeningStockModal';
 import { StockCountModal } from './StockCountModal';
+import { CatalogImportModal } from '../modals/CatalogImportModal';
 
 export const InventoryView: React.FC = () => {
   const [products, setProducts] = useState(InventoryService.getProductsWithStock());
@@ -39,6 +42,7 @@ export const InventoryView: React.FC = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showOpeningStockModal, setShowOpeningStockModal] = useState(false);
   const [showStockCountModal, setShowStockCountModal] = useState(false);
+  const [showCatalogModal, setShowCatalogModal] = useState(false);
 
   // Active product for inspection, adjustment, or edit
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
@@ -203,6 +207,27 @@ export const InventoryView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCatalogModal(true)}
+            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs shadow-emerald-500/20 active:scale-95 transition-all"
+            title="فتح دليل الأدوية واستيراد الأصناف المعتمدة (4,048 صنف)"
+          >
+            <Database className="w-4 h-4" />
+            <span className="hidden sm:inline">دليل الأدوية المعتمد (4,048)</span>
+            <span className="sm:hidden">الدليل</span>
+          </button>
+
+          <a
+            href="/docs/Drug_Products_Directory_Yemen.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-xl flex items-center gap-1.5 border border-emerald-200 transition-all"
+            title="فتح ملف PDF المعتمد (588 صفحة)"
+          >
+            <BookOpen className="w-4 h-4 text-emerald-600" />
+            <span className="hidden sm:inline">PDF</span>
+          </a>
+
           <button
             onClick={() => setShowStockCountModal(true)}
             className="px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl flex items-center gap-1.5 border border-purple-200 transition-all"
@@ -848,6 +873,13 @@ export const InventoryView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Authoritative Drug Catalog Import Modal */}
+      <CatalogImportModal
+        isOpen={showCatalogModal}
+        onClose={() => setShowCatalogModal(false)}
+        onImportComplete={loadData}
+      />
     </div>
   );
 };
