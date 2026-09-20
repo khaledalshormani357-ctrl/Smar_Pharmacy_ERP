@@ -324,6 +324,19 @@ async function runExtractionPipeline() {
     const effectiveTradeName = raw.raw_trade_name || raw.raw_generic_name;
     const effectiveGenericName = raw.raw_generic_name || null;
 
+    // The PDF text layer contains Arabic glyph-order/encoding artefacts in
+    // some disease labels. Preserve the exact extracted value, but never
+    // claim it is a verified Arabic translation: send it to review instead.
+    if (raw.raw_disease && /[\u0600-\u06FF]/.test(raw.raw_disease)) {
+      reviewRecords.push({
+        source_file: raw.source_file,
+        source_page: raw.source_page,
+        source_row: raw.source_row,
+        reason: 'Arabic source text extracted from PDF requires visual/source review; value was preserved without correction',
+        original_record: raw.raw_disease
+      });
+    }
+
     // Normalizations
     const normTrade = normalizeEnglishText(effectiveTradeName);
     const normGeneric = normalizeEnglishText(effectiveGenericName);
@@ -373,7 +386,7 @@ async function runExtractionPipeline() {
       id: deterministicId,
       internal_code: `MED-${internalCodeSeq++}`,
       name_en: effectiveTradeName,
-      name_ar: raw.raw_disease ? `${effectiveTradeName} (${raw.raw_disease.split(/\s+/).slice(0, 3).join(' ')})` : effectiveTradeName,
+      name_ar: raw.raw_disease ? `${effectiveTradeName} (${raw.raw_disease.trim()})` : effectiveTradeName,
       generic_name: effectiveGenericName || undefined,
       active_ingredient: effectiveGenericName ? effectiveGenericName.split('+')[0].trim() : undefined,
       strength: strength || undefined,
@@ -537,7 +550,7 @@ async function runExtractionPipeline() {
 ## 1. Executive Summary & Verification Gate
 - **Authoritative Source**: \`docs/Drug_Catalog_Source1.pdf\` (588 pages, 19MB)
 - **Authoritative Source Policy**: **STRICT ZERO-INVENTION**. Barcode, Price, Purchase Price, Selling Price, and Stock Quantity were NOT invented and remain null/zero as instructed.
-- **Verification Gate Status**: **PASSED (GREEN)**. All extracted records are traceable to source page and row.
+- **Verification Gate Status**: **PASSED WITH REVIEW FLAGS (AMBER)**. All extracted records are traceable to source page and row; Arabic text-layer values requiring visual review are listed separately.
 
 ## 2. Quantitative Summary
 | Metric | Value |

@@ -3,7 +3,7 @@
 ## 1. Executive Summary & Verification Gate
 - **Authoritative Source**: `docs/Drug_Catalog_Source1.pdf` (588 pages, 19MB)
 - **Authoritative Source Policy**: **STRICT ZERO-INVENTION**. Barcode, Price, Purchase Price, Selling Price, and Stock Quantity were NOT invented and remain null/zero as instructed.
-- **Verification Gate Status**: **PASSED (GREEN)**. All extracted records are traceable to source page and row.
+- **Verification Gate Status**: **PASSED WITH REVIEW FLAGS (AMBER)**. All extracted records are traceable to source page and row; Arabic text-layer values requiring visual review are listed separately.
 
 ## 2. Quantitative Summary
 | Metric | Value |
@@ -13,7 +13,7 @@
 | **Raw Records Extracted** | 4101 records |
 | **Clean Master Products** | 4048 unique items |
 | **Duplicate Records Detected** | 53 duplicates |
-| **Flagged for Human Review** | 0 items |
+| **Flagged for Human Review** | 3353 items |
 | **Unique Categories Identified** | 224 therapeutic categories |
 | **Unique Manufacturers** | 544 pharmaceutical manufacturers |
 | **Dosage Forms Standardized** | 100% mapped to Smart Pharmacy ERP standard enums |
