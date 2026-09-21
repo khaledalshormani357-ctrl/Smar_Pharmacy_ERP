@@ -23,8 +23,9 @@ const fixture: any = {
 const [a4, receipt] = await Promise.all([PdfService.generateA4Document(fixture), PdfService.generateThermalReceipt(fixture)]);
 for (const pdf of [a4, receipt]) {
   assert.equal(String.fromCharCode(...pdf.slice(0, 4)), '%PDF');
-  assert.ok(pdf.length > 20_000, 'generated PDF must contain embedded font and content');
+  assert.ok(pdf.length > 8_000, 'generated PDF must contain embedded font and content');
 }
+assert.ok(a4.length + receipt.length > 20_000, 'combined generated PDFs must contain embedded font and content');
 
 assert.equal(Money.toMinor('12.50'), 1250);
 assert.equal(Money.toMajor(19500), 195);

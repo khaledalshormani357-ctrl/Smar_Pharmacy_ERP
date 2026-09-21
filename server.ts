@@ -40,13 +40,13 @@ async function startServer() {
 لا تنفذ أي تعديل مالي أو مخزني من خلال الدردشة.
 سياق التطبيق الحالي: ${JSON.stringify(context || {})}`;
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         contents: safeMessages,
         config: { systemInstruction, temperature: 0.2, maxOutputTokens: 1200 }
       });
       const text = (response.text || '').trim();
       if (!text) return res.status(502).json({ error: 'عاد مزود الذكاء الاصطناعي برد فارغ.' });
-      return res.json({ text, provider: 'gemini', model: 'gemini-2.5-flash' });
+      return res.json({ text, provider: 'gemini', model: 'gemini-3.6-flash' });
     } catch (err: any) {
       console.error('Assistant provider error:', err?.message || 'unknown');
       return res.status(502).json({ error: 'تعذر الاتصال بخدمة المساعد الذكي. حاول مرة أخرى.' });
@@ -72,6 +72,85 @@ async function startServer() {
     }
     return aiClient;
   }
+
+  // AI Assistant Copilot Endpoint for Pharmacy ERP
+  app.post('/api/assistant/chat', async (req, res) => {
+    try {
+      const { message, history, context } = req.body;
+      if (!message || typeof message !== 'string' || !message.trim()) {
+        return res.status(400).json({ error: 'يرجى إرسال نص الرسالة أو السؤال.' });
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(503).json({
+          error: 'خدمة المساعد الذكي غير مفعلة حالياً. لم يتم ضبط مفتاح الذكاء الاصطناعي (GEMINI_API_KEY) في الخادم.',
+        });
+      }
+
+      const ai = getAI();
+
+      // Formulate Grounded Pharmacy Copilot System Prompt
+      const systemPrompt = `أنت مساعد صيدلية ذكي ومستشار أنظمة صيدلانية متقدم (Smart Pharmacy Copilot) يعمل داخل نظام إدارة الصيدليات الفعلي (Pharmacy ERP).
+
+قواعد ومبادئ إلزامية:
+1. أنت تعمل داخل نظام صيدلية حقيقي وليست بيئة تجريبية أو خيالية.
+2. [قاعدة منع اختراع البيانات]: لا تخترع بيانات غير موجودة في قاعدة بيانات الصيدلية (مثل رصيد صنف وهمي، أو أسعار غير مسجلة، أو فواتير وهمية).
+   - إذا سألك المستخدم عن رصيد صنف معين أو تفاصيل مالية، اعتمد فقط على البيانات المتوفرة في سياق الصيدلية أدناه.
+   - إذا لم تكن البيانات متوفرة في السياق، اطلب من المستخدم البحث عن الصنف في شاشة المخزون أو استخدام أمر البحث السريع المدمج.
+3. [قاعدة السلامة الدوائية والسريرية]:
+   - يمكنك تقديم معلومات دوائية مرجعية مبنية على الأدلة السريرية (دواعي الاستعمال، آلية التأثير، الآثار الجانبية الشائعة، التداخلات الدوائية).
+   - لا تخترع تشخيصاً طبياً، أو جرعة غير معتمدة، أو تداخلاً دوائياً بدون سند علمي.
+   - عند اقتراح بدائل دوائية (Alternatives)، وضح دائماً أنها مقترحات للمراجعة الصيدلانية السريرية وليست استبدالاً تلقائياً، مع تنبيه الصيدلي لمطابقة المادة الفعالة والتركيز والشكل الدوائي.
+4. [معرفة بنية النظام]:
+   - نظام الصيدلية يتكون من:
+     * نقطة البيع (POS): إعداد فواتير المبيعات، تطبيق الخصومات، مسح الباركود، دعم سياسة FEFO (الأقرب انتهاءً يصرف أولاً).
+     * الأصناف والمخزون (Inventory): متابعة التشغيلات (Batches)، تواريخ الصلاحية، الجرد المخزني، النواقص، استيراد دليل الأدوية الوطني المعتمد.
+     * المشتريات (Purchases): تسجيل فواتير الشراء والتوريد، مردودات المشتريات، متابعة حسابات الموردين.
+     * الصناديق والمالية: حركات الصندوق، المصروفات، المقبوضات، إغلاق الوردية، التقارير.
+5. أجب باللغة العربية الفصحى الواضحة والمهنية، وبأسلوب دقيق ومختصر ومباشر.
+
+سياق النظام الحالي والبيانات المتاحة:
+${context ? JSON.stringify(context, null, 2) : 'لا توجد بيانات سياقية إضافية.'}`;
+
+      // Build conversation contents
+      const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+
+      if (Array.isArray(history)) {
+        for (const h of history.slice(-8)) {
+          if (h && typeof h.text === 'string') {
+            contents.push({
+              role: h.sender === 'user' ? 'user' : 'model',
+              parts: [{ text: h.text }],
+            });
+          }
+        }
+      }
+
+      // Append current user message
+      contents.push({
+        role: 'user',
+        parts: [{ text: message.trim() }],
+      });
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: 0.3,
+          maxOutputTokens: 1024,
+        },
+      });
+
+      const replyText = response.text || 'عذراً، لم أتمكن من استخلاص إجابة واضحة لهذا السؤال.';
+      return res.json({ text: replyText });
+    } catch (err: any) {
+      console.error('Assistant Chat API Error:', err);
+      return res.status(500).json({
+        error: err.message || 'حدث خطأ أثناء التواصل مع خادم المساعد الذكي.',
+      });
+    }
+  });
 
   // Invoice OCR & Analysis API Endpoint using a vision-capable Gemini model
   app.post('/api/gemini/analyze-invoice', async (req, res) => {
@@ -128,7 +207,7 @@ ${JSON.stringify((existingProducts || []).slice(0, 60).map((p: any) => ({ id: p.
 أرجع فقط كائن JSON صحيح وبدون أي نصوص إضافية أو كتل Markdown.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         contents: {
           parts: [
             {

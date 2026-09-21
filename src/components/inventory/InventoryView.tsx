@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Package,
   Plus,
@@ -92,26 +92,41 @@ export const InventoryView: React.FC = () => {
     setManufacturers(db.getState().manufacturers || []);
   };
 
-  const filteredProducts = products.filter((p) => {
+  const filteredProducts = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    const matchesQuery =
-      !q ||
-      p.name_ar.toLowerCase().includes(q) ||
-      (p.name_en && p.name_en.toLowerCase().includes(q)) ||
-      (p.barcode && p.barcode.toLowerCase().includes(q)) ||
-      (p.generic_name && p.generic_name.toLowerCase().includes(q)) ||
-      (p.active_ingredient && p.active_ingredient.toLowerCase().includes(q)) ||
-      p.internal_code.toLowerCase().includes(q);
+    return products.filter((p) => {
+      const matchesQuery =
+        !q ||
+        p.name_ar.toLowerCase().includes(q) ||
+        (p.name_en && p.name_en.toLowerCase().includes(q)) ||
+        (p.barcode && p.barcode.toLowerCase().includes(q)) ||
+        (p.generic_name && p.generic_name.toLowerCase().includes(q)) ||
+        (p.active_ingredient && p.active_ingredient.toLowerCase().includes(q)) ||
+        p.internal_code.toLowerCase().includes(q);
 
-    if (!matchesQuery) return false;
-    if (selectedCategoryFilter && p.category_id !== selectedCategoryFilter) return false;
+      if (!matchesQuery) return false;
+      if (selectedCategoryFilter && p.category_id !== selectedCategoryFilter) return false;
 
-    if (filterType === 'low') return p.isLowStock;
-    if (filterType === 'reorder') return p.isNeedsReorder;
-    if (filterType === 'expiring') return p.isNearExpiry;
-    if (filterType === 'expired') return p.isExpired;
-    return true;
-  });
+      if (filterType === 'low') return p.isLowStock;
+      if (filterType === 'reorder') return p.isNeedsReorder;
+      if (filterType === 'expiring') return p.isNearExpiry;
+      if (filterType === 'expired') return p.isExpired;
+      return true;
+    });
+  }, [products, searchQuery, selectedCategoryFilter, filterType]);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 40;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategoryFilter, filterType]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const paginatedProducts = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, currentPage, pageSize]);
 
   const handleOpenAdd = () => {
     setSelectedProduct(null);
@@ -358,119 +373,149 @@ export const InventoryView: React.FC = () => {
             <p className="text-sm font-semibold">لا توجد أدوية مطابقة لهذا البحث أو الفلتر</p>
           </div>
         ) : (
-          filteredProducts.map((p) => (
-            <div
-              key={p.id}
-              className="bg-white rounded-3xl p-4 border border-slate-200 shadow-xs flex flex-col gap-3 hover:border-slate-300 transition-all"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="text-sm font-bold text-slate-900 truncate">{p.name_ar}</h4>
-                    {p.isLowStock && (
-                      <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-200 rounded-md">
-                        نواقص
-                      </span>
-                    )}
-                    {p.isNearExpiry && (
-                      <span className="px-1.5 py-0.5 text-[10px] font-bold bg-orange-50 text-orange-600 border border-orange-200 rounded-md">
-                        قريب الصلاحية
-                      </span>
-                    )}
-                    {p.isExpired && (
-                      <span className="px-1.5 py-0.5 text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 rounded-md">
-                        منتهي
-                      </span>
-                    )}
+          <>
+            {paginatedProducts.map((p) => (
+              <div
+                key={p.id}
+                className="bg-white rounded-3xl p-4 border border-slate-200 shadow-xs flex flex-col gap-3 hover:border-slate-300 transition-all"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-bold text-slate-900 truncate">{p.name_ar}</h4>
+                      {p.isLowStock && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-200 rounded-md">
+                          نواقص
+                        </span>
+                      )}
+                      {p.isNearExpiry && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold bg-orange-50 text-orange-600 border border-orange-200 rounded-md">
+                          قريب الصلاحية
+                        </span>
+                      )}
+                      {p.isExpired && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 rounded-md">
+                          منتهي
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 font-mono mt-0.5">
+                      <span>{p.internal_code}</span>
+                      {p.barcode && <span>• باركود: {p.barcode}</span>}
+                      {p.generic_name && <span>• {p.generic_name}</span>}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 font-mono mt-0.5">
-                    <span>{p.internal_code}</span>
-                    {p.barcode && <span>• باركود: {p.barcode}</span>}
-                    {p.generic_name && <span>• {p.generic_name}</span>}
+
+                  {/* Quick Inspection & Action Buttons */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setSelectedProduct(p);
+                        setShowDetailsModal(true);
+                      }}
+                      className="px-2.5 py-1 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                      title="عرض بطاقة الصنف والتشغيلات"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>التفاصيل</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setSelectedProduct(p);
+                        setShowOpeningStockModal(true);
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-blue-600 rounded-xl hover:bg-slate-100 transition-colors"
+                      title="إضافة رصيد افتتاحي"
+                    >
+                      <Tag className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setSelectedProduct(p);
+                        setAdjustBatchId(p.batches[0]?.id || '');
+                        setAdjustNewQty(p.batches[0]?.current_quantity || 0);
+                        setShowAdjustModal(true);
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-amber-600 rounded-xl hover:bg-slate-100 transition-colors"
+                      title="تسوية مخزنية وتعديل رصيد"
+                    >
+                      <SlidersHorizontal className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 
-                {/* Quick Inspection & Action Buttons */}
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      setSelectedProduct(p);
-                      setShowDetailsModal(true);
-                    }}
-                    className="px-2.5 py-1 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
-                    title="عرض بطاقة الصنف والتشغيلات"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>التفاصيل</span>
-                  </button>
+                {/* Stock and Price details */}
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">الرصيد الكلي:</span>
+                    <span className="font-bold font-mono text-slate-800">
+                      {p.totalBaseStock} {p.base_unit}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">سعر الشراء المرجعي:</span>
+                    <span className="font-mono text-slate-700">
+                      {Money.format(p.current_purchase_price)}
+                    </span>
+                  </div>
+                  <div className="text-left">
+                    <span className="text-[10px] text-slate-400 block">سعر البيع الافتراضي:</span>
+                    <span className="font-bold font-mono text-emerald-600">
+                      {Money.format(p.current_selling_price)}
+                    </span>
+                  </div>
+                </div>
 
-                  <button
-                    onClick={() => {
-                      setSelectedProduct(p);
-                      setShowOpeningStockModal(true);
-                    }}
-                    className="p-1.5 text-slate-400 hover:text-blue-600 rounded-xl hover:bg-slate-100 transition-colors"
-                    title="إضافة رصيد افتتاحي"
-                  >
-                    <Tag className="w-4 h-4" />
-                  </button>
+                {/* Batches Preview */}
+                {p.batches.length > 0 && (
+                  <div className="bg-slate-50 p-2 rounded-2xl text-[11px] flex items-center justify-between font-mono">
+                    <span className="text-slate-500">أقرب دفعة FEFO: {p.batches[0].batch_number}</span>
+                    <span
+                      className={
+                        p.isExpired
+                          ? 'text-rose-600 font-bold'
+                          : p.isNearExpiry
+                          ? 'text-orange-600 font-bold'
+                          : 'text-slate-600'
+                      }
+                    >
+                      صلاحية: {p.batches[0].expiry_date}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
 
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-3xl border border-slate-200 text-xs text-slate-600 shadow-xs">
+                <div className="font-medium">
+                  عرض {(currentPage - 1) * pageSize + 1} إلى {Math.min(currentPage * pageSize, filteredProducts.length)} من أصل <strong className="text-slate-900 font-bold">{filteredProducts.length.toLocaleString('en-US')}</strong> صنف
+                </div>
+                <div className="flex items-center gap-1.5">
                   <button
-                    onClick={() => {
-                      setSelectedProduct(p);
-                      setAdjustBatchId(p.batches[0]?.id || '');
-                      setAdjustNewQty(p.batches[0]?.current_quantity || 0);
-                      setShowAdjustModal(true);
-                    }}
-                    className="p-1.5 text-slate-400 hover:text-amber-600 rounded-xl hover:bg-slate-100 transition-colors"
-                    title="تسوية مخزنية وتعديل رصيد"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 disabled:opacity-35 hover:bg-slate-50 font-bold transition-colors"
                   >
-                    <SlidersHorizontal className="w-4 h-4" />
+                    السابق
+                  </button>
+                  <div className="px-3 py-1.5 font-mono font-bold bg-slate-50 border border-slate-200 rounded-xl">
+                    {currentPage} / {totalPages}
+                  </div>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 disabled:opacity-35 hover:bg-slate-50 font-bold transition-colors"
+                  >
+                    التالي
                   </button>
                 </div>
               </div>
-
-              {/* Stock and Price details */}
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-xs">
-                <div>
-                  <span className="text-[10px] text-slate-400 block">الرصيد الكلي:</span>
-                  <span className="font-bold font-mono text-slate-800">
-                    {p.totalBaseStock} {p.base_unit}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 block">سعر الشراء المرجعي:</span>
-                  <span className="font-mono text-slate-700">
-                    {Money.format(p.current_purchase_price)}
-                  </span>
-                </div>
-                <div className="text-left">
-                  <span className="text-[10px] text-slate-400 block">سعر البيع الافتراضي:</span>
-                  <span className="font-bold font-mono text-emerald-600">
-                    {Money.format(p.current_selling_price)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Batches Preview */}
-              {p.batches.length > 0 && (
-                <div className="bg-slate-50 p-2 rounded-2xl text-[11px] flex items-center justify-between font-mono">
-                  <span className="text-slate-500">أقرب دفعة FEFO: {p.batches[0].batch_number}</span>
-                  <span
-                    className={
-                      p.isExpired
-                        ? 'text-rose-600 font-bold'
-                        : p.isNearExpiry
-                        ? 'text-orange-600 font-bold'
-                        : 'text-slate-600'
-                    }
-                  >
-                    صلاحية: {p.batches[0].expiry_date}
-                  </span>
-                </div>
-              )}
-            </div>
-          ))
+            )}
+          </>
         )}
       </div>
 

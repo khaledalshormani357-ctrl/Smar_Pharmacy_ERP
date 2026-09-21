@@ -1,6 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { App as CapacitorApp } from '@capacitor/app';
-import { Capacitor } from '@capacitor/core';
+import React, { useState, useEffect } from 'react';
 import { db } from './db/sqlite';
 import { PasswordSecurity } from './utils/security';
 import { AppHeader } from './components/navigation/AppHeader';
@@ -15,7 +13,9 @@ import { QuickVoucherModal } from './components/modals/QuickVoucherModal';
 import { SmartAssistantModal } from './components/modals/SmartAssistantModal';
 import { ApkDownloadModal } from './components/modals/ApkDownloadModal';
 import { User, PharmacyProfile } from './types';
-import { Bot, Sparkles } from 'lucide-react';
+import { Bot, Sparkles, AlertCircle } from 'lucide-react';
+import { BackNavigationService } from './services/BackNavigationService';
+import { useBackHandler } from './hooks/useBackHandler';
 
 export function App() {
   const [currentTab, setCurrentTab] = useState<TabKey>('dashboard');
@@ -24,16 +24,61 @@ export function App() {
   const [isLocked, setIsLocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [lockError, setLockError] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Quick modals from bottom nav or anywhere
   const [showQuickSearch, setShowQuickSearch] = useState(false);
   const [showQuickVoucher, setShowQuickVoucher] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showApkModal, setShowApkModal] = useState(false);
-  const [backToast, setBackToast] = useState('');
-  const navigationRef = useRef({ currentTab, showQuickSearch, showQuickVoucher, showAssistant, showApkModal });
-  const lastBackRef = useRef(0);
-  navigationRef.current = { currentTab, showQuickSearch, showQuickVoucher, showAssistant, showApkModal };
+
+  // Initialize Android & Web Back Navigation Policy
+  useEffect(() => {
+    BackNavigationService.init();
+
+    BackNavigationService.setToastCallback((msg: string) => {
+      setToastMessage(msg);
+      setTimeout(() => {
+        setToastMessage(null);
+      }, 2200);
+    });
+
+    return () => {
+      // cleanup if needed
+    };
+  }, []);
+
+  // Set navigation back fallback: when no modals/drawers open, return from tab to dashboard
+  useEffect(() => {
+    BackNavigationService.setFallbackToRootCallback(() => {
+      if (currentTab !== 'dashboard') {
+        setCurrentTab('dashboard');
+        return true; // Handled, did not exit
+      }
+      return false; // Already at root dashboard
+    });
+  }, [currentTab]);
+
+  // Register modal back handlers (closing modal when hardware back button pressed)
+  useBackHandler('modal-quick-search', showQuickSearch, () => {
+    setShowQuickSearch(false);
+    return true;
+  }, 100);
+
+  useBackHandler('modal-quick-voucher', showQuickVoucher, () => {
+    setShowQuickVoucher(false);
+    return true;
+  }, 100);
+
+  useBackHandler('modal-smart-assistant', showAssistant, () => {
+    setShowAssistant(false);
+    return true;
+  }, 100);
+
+  useBackHandler('modal-apk-download', showApkModal, () => {
+    setShowApkModal(false);
+    return true;
+  }, 100);
 
   useEffect(() => {
     const unsub = db.subscribe(() => {
@@ -41,28 +86,6 @@ export function App() {
       setCurrentUser(db.getState().users[0]);
     });
     return unsub;
-  }, []);
-
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    let listener: { remove: () => Promise<void> } | null = null;
-    CapacitorApp.addListener('backButton', () => {
-      const state = navigationRef.current;
-      if (state.showAssistant) return setShowAssistant(false);
-      if (state.showQuickSearch) return setShowQuickSearch(false);
-      if (state.showQuickVoucher) return setShowQuickVoucher(false);
-      if (state.showApkModal) return setShowApkModal(false);
-      if (state.currentTab !== 'dashboard') return setCurrentTab('dashboard');
-      const now = Date.now();
-      if (now - lastBackRef.current < 2000) {
-        CapacitorApp.exitApp();
-      } else {
-        lastBackRef.current = now;
-        setBackToast('اضغط مرة أخرى للخروج');
-        window.setTimeout(() => setBackToast(''), 2000);
-      }
-    }).then((handle) => { listener = handle; });
-    return () => { listener?.remove(); };
   }, []);
 
   const handleUnlock = (e: React.FormEvent) => {
@@ -207,9 +230,17 @@ export function App() {
         />
       )}
       {showApkModal && <ApkDownloadModal isOpen={showApkModal} onClose={() => setShowApkModal(false)} />}
-      {backToast && <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] rounded-xl bg-slate-900 text-white px-4 py-2 text-xs font-bold shadow-xl">{backToast}</div>}
+
+      {/* Android Back Navigation Exit Confirmation Toast */}
+      {toastMessage && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-xl border border-slate-700/80 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <AlertCircle className="w-4 h-4 text-amber-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }
 
 export default App;
+

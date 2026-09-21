@@ -16,6 +16,8 @@ import { SaleRepository } from '../../db/repositories';
 import { SalesReturnService } from '../../services/SalesReturnService';
 import { Sale, SaleItem, SaleItemAllocation, User, ItemCondition } from '../../types';
 import { Money } from '../../utils/money';
+import { NumericInput } from '../ui/NumericInput';
+import { useBackHandler } from '../../hooks/useBackHandler';
 
 interface SaleReturnModalProps {
   currentUser: User;
@@ -30,6 +32,11 @@ export const SaleReturnModal: React.FC<SaleReturnModalProps> = ({
   preselectedSale,
   onReturnSuccess
 }) => {
+  useBackHandler('modal-sale-return', true, () => {
+    onClose();
+    return true;
+  }, 105);
+
   const [searchQuery, setSearchQuery] = useState(preselectedSale?.invoice_number || '');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(preselectedSale || null);
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
@@ -314,22 +321,24 @@ export const SaleReturnModal: React.FC<SaleReturnModalProps> = ({
                           {/* Controls */}
                           {!isFullyReturned ? (
                             <div className="flex flex-col items-end gap-2">
-                              <div className="flex items-center gap-1">
-                                <span className="text-xs text-slate-500">كمية الإرجاع:</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max={remainingReturnable}
-                                  value={curQty}
-                                  onChange={(e) => {
-                                    const val = Math.max(0, Math.min(remainingReturnable, Number(e.target.value) || 0));
-                                    setSelectedReturnQuantities({
-                                      ...selectedReturnQuantities,
-                                      [item.id]: val
-                                    });
-                                  }}
-                                  className="w-16 px-2 py-1 text-center font-bold text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                                />
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-medium text-slate-600">كمية الإرجاع:</span>
+                                <div className="w-20">
+                                  <NumericInput
+                                    value={curQty}
+                                    min={0}
+                                    max={remainingReturnable}
+                                    allowDecimals={false}
+                                    onChange={(val) => {
+                                      const bounded = Math.max(0, Math.min(remainingReturnable, val));
+                                      setSelectedReturnQuantities({
+                                        ...selectedReturnQuantities,
+                                        [item.id]: bounded
+                                      });
+                                    }}
+                                    className="py-1 text-xs text-center font-bold"
+                                  />
+                                </div>
                               </div>
 
                               {curQty > 0 && (

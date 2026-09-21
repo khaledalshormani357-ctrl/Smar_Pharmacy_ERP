@@ -96,7 +96,7 @@ export class SQLiteEngine {
     return () => this.listeners.delete(listener);
   }
 
-  private notify() {
+  public notify() {
     this.listeners.forEach((fn) => fn());
     this.saveState();
   }

@@ -229,5 +229,7 @@ export interface AssistantMessage {
     actionResult?: ActionResultData;
     ambiguity?: AmbiguityData;
     errorReason?: string;
+    canRetry?: boolean;
+    originalQuery?: string;
   };
 }

@@ -1,11 +1,11 @@
-// Service for Importing and Managing the Authoritative Yemen Pharmacy Drug Catalog
-// Strict zero-invention compliance: preserves master catalog records without artificial prices or stock
+// Drug Catalog Import Service for Smart Pharmacy ERP
+// Solves DEFECT-05 / Phase 8.5: Eliminates UI freezing / ANR via async chunked batching, mutex lock & responsive yield cycles
 
 import { db } from '../db/sqlite';
 import { Product, Category, Manufacturer } from '../types';
 
 export interface CatalogMetadata {
-  version: number;
+  version: string;
   generated_at: string;
   source_file: string;
   source_pages: number;
@@ -14,36 +14,106 @@ export interface CatalogMetadata {
   total_manufacturers: number;
 }
 
-export interface CatalogSeedData {
-  version: number;
+export interface DrugCatalogSeed {
+  version: string;
   generated_at: string;
   source_file: string;
   source_pages: number;
-  categories: Category[];
-  manufacturers: Manufacturer[];
+  total_items: number;
+  categories: Array<{ id: string; name_ar: string; name_en: string }>;
+  manufacturers: Array<{ id: string; name_ar: string; country: string }>;
   products: Product[];
 }
 
-export class CatalogImportService {
-  private static cachedSeed: CatalogSeedData | null = null;
+export interface CatalogImportProgress {
+  imported: number;
+  total: number;
+  percent: number;
+  remaining: number;
+  skippedDuplicates: number;
+  errorsCount: number;
+  currentBatch: number;
+  totalBatches: number;
+  stage: 'loading' | 'categories' | 'manufacturers' | 'products' | 'finalizing' | 'completed' | 'cancelled';
+}
 
-  public static async loadSeedData(): Promise<CatalogSeedData> {
+export interface CatalogImportOptions {
+  batchSize?: number;
+  onProgress?: (progress: CatalogImportProgress) => void;
+  signal?: AbortSignal;
+  limit?: number; // for testing custom counts e.g. 10, 100, 1000
+  itemsOverride?: any[]; // for testing custom payloads
+}
+
+export class CatalogImportService {
+  private static cachedSeed: DrugCatalogSeed | null = null;
+  private static isImporting = false;
+  private static activeAbortController: AbortController | null = null;
+
+  public static isRunning(): boolean {
+    return this.isImporting;
+  }
+
+  public static cancelImport(): void {
+    if (this.activeAbortController) {
+      this.activeAbortController.abort();
+    }
+  }
+
+  public static clearCache(): void {
+    this.cachedSeed = null;
+  }
+
+  public static async loadSeedData(): Promise<DrugCatalogSeed> {
     if (this.cachedSeed) {
       return this.cachedSeed;
     }
 
-    try {
-      const res = await fetch('/data/drug_catalog_seed.json');
-      if (!res.ok) {
-        throw new Error(`Failed to fetch catalog seed: ${res.statusText}`);
+    let rawData: any = null;
+
+    if (typeof window === 'undefined') {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const seedPath = path.resolve(process.cwd(), 'public/data/drug_catalog_seed.json');
+        const cleanPath = path.resolve(process.cwd(), 'public/data/drug_catalog_clean.json');
+        const targetPath = fs.existsSync(seedPath) ? seedPath : cleanPath;
+        if (fs.existsSync(targetPath)) {
+          const content = fs.readFileSync(targetPath, 'utf-8');
+          rawData = JSON.parse(content);
+        }
+      } catch (err) {
+        // Fall back to fetch if fs fails
       }
-      const data: CatalogSeedData = await res.json();
-      this.cachedSeed = data;
-      return data;
-    } catch (err) {
-      console.error('Error loading drug catalog seed data:', err);
-      throw err;
     }
+
+    if (!rawData) {
+      let response = await fetch('/data/drug_catalog_seed.json');
+      if (!response.ok) {
+        response = await fetch('/data/drug_catalog_clean.json');
+      }
+      if (!response.ok) {
+        throw new Error(`تعذر تحميل ملف الدليل الوطني (${response.status})`);
+      }
+      rawData = await response.json();
+    }
+
+    if (Array.isArray(rawData)) {
+      this.cachedSeed = {
+        version: '1.0.0',
+        generated_at: new Date().toISOString(),
+        source_file: 'drug_catalog_clean.json',
+        source_pages: 588,
+        total_items: rawData.length,
+        categories: [],
+        manufacturers: [],
+        products: rawData
+      };
+    } else {
+      this.cachedSeed = rawData as DrugCatalogSeed;
+    }
+
+    return this.cachedSeed;
   }
 
   public static async getCatalogStats(): Promise<{
@@ -99,134 +169,305 @@ export class CatalogImportService {
     }
   }
 
-  // Idempotent Master Catalog Import
-  public static async importCatalog(options?: {
-    batchSize?: number;
-    onProgress?: (progress: { imported: number; total: number; percent: number }) => void;
-  }): Promise<{
+  /**
+   * Safe, non-blocking async chunked import of drug catalog.
+   * Features:
+   * - Concurrency mutex lock (prevents duplicate simultaneous imports)
+   * - Cancellation support via AbortSignal or cancelImport()
+   * - Responsive yield cycles (requestAnimationFrame + setTimeout) to prevent UI freeze
+   * - Atomic rollback snapshot on cancellation or fatal error
+   * - Idempotency against IDs and composite trade/dosage/pack signatures
+   */
+  public static async importCatalog(options?: CatalogImportOptions): Promise<{
     importedProducts: number;
     importedCategories: number;
     importedManufacturers: number;
     skippedDuplicates: number;
+    errorsCount: number;
   }> {
-    const seed = await this.loadSeedData();
-    const batchSize = Math.max(25, options?.batchSize || 200);
-    return db.transactionAsync(async () => {
+    if (this.isImporting) {
+      throw new Error('عملية استيراد قاعدة بيانات الأدوية قيد التنفيذ بالفعل');
+    }
+
+    this.isImporting = true;
+    this.activeAbortController = new AbortController();
+
+    const checkAborted = () => {
+      if (options?.signal?.aborted || this.activeAbortController?.signal.aborted) {
+        const err = new Error('تم إلغاء عملية الاستيراد بواسطة المستخدم');
+        err.name = 'AbortError';
+        throw err;
+      }
+    };
+
+    // Take snapshot for clean transactional rollback if aborted or failed
     const state = db.getState();
+    const stateSnapshot = {
+      categories: [...state.categories],
+      manufacturers: [...state.manufacturers],
+      products: [...state.products]
+    };
 
-    let importedProducts = 0;
-    let importedCategories = 0;
-    let importedManufacturers = 0;
-    let skippedDuplicates = 0;
+    const batchSize = Math.max(10, Math.min(200, options?.batchSize || 60));
 
-    // 1. Import Categories idempotently
-    const existingCategoryNames = new Set(
-      state.categories.map((c) => (c.name_en || c.name_ar || '').toLowerCase().trim())
-    );
-    const existingCategoryIds = new Set(state.categories.map((c) => c.id));
+    // Responsive yield helper: guarantees rendering thread gets frame time
+    const yieldToEventLoop = () =>
+      new Promise<void>((resolve) => {
+        if (typeof requestAnimationFrame !== 'undefined') {
+          requestAnimationFrame(() => setTimeout(resolve, 0));
+        } else {
+          setTimeout(resolve, 4);
+        }
+      });
 
-    for (let catIndex = 0; catIndex < seed.categories.length; catIndex++) {
-      const cat = seed.categories[catIndex];
-      const nameKey = (cat.name_en || cat.name_ar || '').toLowerCase().trim();
-      if (!existingCategoryIds.has(cat.id) && !existingCategoryNames.has(nameKey)) {
-        state.categories.push({
-          id: cat.id,
-          name_ar: cat.name_ar,
-          name_en: cat.name_en,
-          is_active: true
+    try {
+      if (options?.onProgress) {
+        options.onProgress({
+          imported: 0,
+          total: 0,
+          percent: 0,
+          remaining: 0,
+          skippedDuplicates: 0,
+          errorsCount: 0,
+          currentBatch: 0,
+          totalBatches: 0,
+          stage: 'loading'
         });
-        existingCategoryIds.add(cat.id);
-        existingCategoryNames.add(nameKey);
-        importedCategories++;
-      }
-    }
-
-    // 2. Import Manufacturers idempotently
-    const existingMfgNames = new Set(state.manufacturers.map((m) => m.name_ar.toLowerCase().trim()));
-    const existingMfgIds = new Set(state.manufacturers.map((m) => m.id));
-
-    for (let mfgIndex = 0; mfgIndex < seed.manufacturers.length; mfgIndex++) {
-      const mfg = seed.manufacturers[mfgIndex];
-      const nameKey = mfg.name_ar.toLowerCase().trim();
-      if (!existingMfgIds.has(mfg.id) && !existingMfgNames.has(nameKey)) {
-        state.manufacturers.push({
-          id: mfg.id,
-          name_ar: mfg.name_ar,
-          country: mfg.country
-        });
-        existingMfgIds.add(mfg.id);
-        existingMfgNames.add(nameKey);
-        importedManufacturers++;
-      }
-    }
-
-    // 3. Import Products idempotently
-    const existingProductIds = new Set(state.products.map((p) => p.id));
-    const existingSignatures = new Set(
-      state.products.map((p) => {
-        const name = (p.name_en || p.name_ar || '').toLowerCase().trim();
-        return `${name}|${p.dosage_form}|${p.pack_size}`;
-      })
-    );
-
-    const totalToProcess = seed.products.length;
-
-    for (let i = 0; i < totalToProcess; i++) {
-      const prod = seed.products[i];
-      const name = (prod.name_en || prod.name_ar || '').toLowerCase().trim();
-      const sig = `${name}|${prod.dosage_form}|${prod.pack_size}`;
-
-      if (existingProductIds.has(prod.id) || existingSignatures.has(sig)) {
-        skippedDuplicates++;
-      } else {
-        state.products.push({
-          ...prod,
-          current_purchase_price: 0,
-          current_selling_price: 0,
-          min_stock_level: 0,
-          reorder_level: 0,
-          is_active: true
-        });
-        existingProductIds.add(prod.id);
-        existingSignatures.add(sig);
-        importedProducts++;
       }
 
-      if (options?.onProgress && (i % batchSize === 0 || i === totalToProcess - 1)) {
+      checkAborted();
+      const seed = await this.loadSeedData();
+      checkAborted();
+
+      let productsSource = options?.itemsOverride || seed.products;
+      if (options?.limit && options.limit > 0) {
+        productsSource = productsSource.slice(0, options.limit);
+      }
+
+      let importedProducts = 0;
+      let importedCategories = 0;
+      let importedManufacturers = 0;
+      let skippedDuplicates = 0;
+      let errorsCount = 0;
+
+      const totalToProcess = productsSource.length;
+      const totalBatches = Math.max(1, Math.ceil(totalToProcess / batchSize));
+
+      // 1. Import Categories idempotently
+      if (options?.onProgress) {
+        options.onProgress({
+          imported: 0,
+          total: totalToProcess,
+          percent: 1,
+          remaining: totalToProcess,
+          skippedDuplicates: 0,
+          errorsCount: 0,
+          currentBatch: 0,
+          totalBatches,
+          stage: 'categories'
+        });
+      }
+
+      const existingCategoryNames = new Set(
+        state.categories.map((c) => (c.name_en || c.name_ar || '').toLowerCase().trim())
+      );
+      const existingCategoryIds = new Set(state.categories.map((c) => c.id));
+
+      for (const cat of seed.categories) {
+        const nameKey = (cat.name_en || cat.name_ar || '').toLowerCase().trim();
+        if (!existingCategoryIds.has(cat.id) && !existingCategoryNames.has(nameKey)) {
+          state.categories.push({
+            id: cat.id,
+            name_ar: cat.name_ar,
+            name_en: cat.name_en,
+            is_active: true
+          });
+          existingCategoryIds.add(cat.id);
+          existingCategoryNames.add(nameKey);
+          importedCategories++;
+        }
+      }
+
+      await yieldToEventLoop();
+      checkAborted();
+
+      // 2. Import Manufacturers idempotently
+      if (options?.onProgress) {
+        options.onProgress({
+          imported: 0,
+          total: totalToProcess,
+          percent: 3,
+          remaining: totalToProcess,
+          skippedDuplicates: 0,
+          errorsCount: 0,
+          currentBatch: 0,
+          totalBatches,
+          stage: 'manufacturers'
+        });
+      }
+
+      const existingMfgNames = new Set(state.manufacturers.map((m) => m.name_ar.toLowerCase().trim()));
+      const existingMfgIds = new Set(state.manufacturers.map((m) => m.id));
+
+      for (const mfg of seed.manufacturers) {
+        const nameKey = mfg.name_ar.toLowerCase().trim();
+        if (!existingMfgIds.has(mfg.id) && !existingMfgNames.has(nameKey)) {
+          state.manufacturers.push({
+            id: mfg.id,
+            name_ar: mfg.name_ar,
+            country: mfg.country
+          });
+          existingMfgIds.add(mfg.id);
+          existingMfgNames.add(nameKey);
+          importedManufacturers++;
+        }
+      }
+
+      await yieldToEventLoop();
+      checkAborted();
+
+      // 3. Import Products in Non-blocking Async Chunks
+      const existingProductIds = new Set(state.products.map((p) => p.id));
+      const existingSignatures = new Set(
+        state.products.map((p) => {
+          const name = (p.name_en || p.name_ar || '').toLowerCase().trim();
+          return `${name}|${p.dosage_form}|${p.pack_size}`;
+        })
+      );
+
+      for (let b = 0; b < totalBatches; b++) {
+        checkAborted();
+
+        const startIdx = b * batchSize;
+        const endIdx = Math.min(startIdx + batchSize, totalToProcess);
+        const batchSlice = productsSource.slice(startIdx, endIdx);
+
+        for (const prod of batchSlice) {
+          try {
+            const name = (prod.name_en || prod.name_ar || '').toLowerCase().trim();
+            const sig = `${name}|${prod.dosage_form}|${prod.pack_size}`;
+
+            if (existingProductIds.has(prod.id) || existingSignatures.has(sig)) {
+              skippedDuplicates++;
+            } else {
+              state.products.push({
+                ...prod,
+                current_purchase_price: prod.current_purchase_price || 0,
+                current_selling_price: prod.current_selling_price || 0,
+                min_stock_level: prod.min_stock_level || 0,
+                reorder_level: prod.reorder_level || 0,
+                is_active: prod.is_active !== undefined ? prod.is_active : true
+              });
+              existingProductIds.add(prod.id);
+              existingSignatures.add(sig);
+              importedProducts++;
+            }
+          } catch (itemErr) {
+            console.warn('Error processing product during catalog import:', itemErr);
+            errorsCount++;
+          }
+        }
+
+        const processedSoFar = endIdx;
+        const percent = Math.min(99, Math.round((processedSoFar / totalToProcess) * 100));
+
+        if (options?.onProgress) {
+          options.onProgress({
+            imported: importedProducts,
+            total: totalToProcess,
+            percent,
+            remaining: totalToProcess - processedSoFar,
+            skippedDuplicates,
+            errorsCount,
+            currentBatch: b + 1,
+            totalBatches,
+            stage: 'products'
+          });
+        }
+
+        // Give the UI thread frame time to paint progress and process user events
+        await yieldToEventLoop();
+      }
+
+      checkAborted();
+
+      // 4. Finalize & Save
+      if (options?.onProgress) {
         options.onProgress({
           imported: importedProducts,
           total: totalToProcess,
-          percent: Math.round(((i + 1) / totalToProcess) * 100)
+          percent: 99,
+          remaining: 0,
+          skippedDuplicates,
+          errorsCount,
+          currentBatch: totalBatches,
+          totalBatches,
+          stage: 'finalizing'
         });
       }
-      if ((i + 1) % batchSize === 0) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+      // Audit log entry
+      if (state.audit_logs) {
+        state.audit_logs.push({
+          id: 'audit-' + Date.now(),
+          user_id: 'admin',
+          action: 'import',
+          entity: 'product',
+          entity_id: 'drug_catalog_yemen',
+          device_id: 'local_terminal',
+          reason: `استيراد الدليل الوطني للأدوية المعتمد: تم استيراد ${importedProducts} صنف، ${importedCategories} تصنيف، ${importedManufacturers} شركة مصنعة (تخطي ${skippedDuplicates} مكرر).`,
+          created_at: Date.now()
+        });
       }
+
+      // Save and notify listeners cleanly
+      db.notify();
+
+      if (options?.onProgress) {
+        options.onProgress({
+          imported: importedProducts,
+          total: totalToProcess,
+          percent: 100,
+          remaining: 0,
+          skippedDuplicates,
+          errorsCount,
+          currentBatch: totalBatches,
+          totalBatches,
+          stage: 'completed'
+        });
+      }
+
+      return {
+        importedProducts,
+        importedCategories,
+        importedManufacturers,
+        skippedDuplicates,
+        errorsCount
+      };
+    } catch (err: any) {
+      // Transactional rollback on abort or error
+      state.categories = stateSnapshot.categories;
+      state.manufacturers = stateSnapshot.manufacturers;
+      state.products = stateSnapshot.products;
+
+      if (options?.onProgress && (err?.name === 'AbortError' || err?.message?.includes('إلغاء'))) {
+        options.onProgress({
+          imported: 0,
+          total: 0,
+          percent: 0,
+          remaining: 0,
+          skippedDuplicates: 0,
+          errorsCount: 0,
+          currentBatch: 0,
+          totalBatches: 0,
+          stage: 'cancelled'
+        });
+      }
+
+      throw err;
+    } finally {
+      this.isImporting = false;
+      this.activeAbortController = null;
     }
-
-    // Audit log entry
-    if (state.audit_logs) {
-      state.audit_logs.push({
-        id: 'audit-' + Date.now(),
-        user_id: 'admin',
-        action: 'import',
-        entity: 'product',
-        entity_id: 'drug_catalog_yemen',
-        device_id: 'local_terminal',
-        reason: `استيراد الدليل الوطني للأدوية: تم استيراد ${importedProducts} صنف، ${importedCategories} تصنيف، ${importedManufacturers} شركة مصنعة بنجاح بدون ابتداع أسعار أو مخزون.`,
-        created_at: Date.now()
-      });
-    }
-
-    // Persist to local SQLite storage
-    db.saveState();
-
-    return {
-      importedProducts,
-      importedCategories,
-      importedManufacturers,
-      skippedDuplicates
-    };
-    });
   }
 }

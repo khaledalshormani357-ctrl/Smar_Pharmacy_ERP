@@ -28,7 +28,8 @@ export class AssistantOrchestrator {
    */
   static async processMessage(
     text: string,
-    context: AssistantContext
+    context: AssistantContext,
+    history: AssistantMessage[] = []
   ): Promise<AssistantMessage> {
     const trimmed = (text || '').trim();
     if (!trimmed) {
@@ -356,13 +357,7 @@ export class AssistantOrchestrator {
         }
 
         default: {
-          return {
-            id: 'msg-' + Date.now(),
-            sender: 'assistant',
-            timestamp: Date.now(),
-            text: `أنا هنا لمساعدتك. يمكنك سؤالي عن كيفية استخدام التطبيق (مثل: "كيف أضيف صنف؟")، أو الاستفسار عن الأرصدة (مثل: "ما رصيد الصندوق؟") أو تنفيذ عمليات مثل تسجيل المصروفات وفواتير البيع.`,
-            responseType: 'TEXT'
-          };
+          return await this.queryAIAssistant(trimmed, context, history);
         }
       }
     } catch (err: any) {
@@ -373,7 +368,122 @@ export class AssistantOrchestrator {
         timestamp: Date.now(),
         text: `تعذر إتمام العملية: ${err.message || 'حدث خطأ غير متوقع.'}`,
         responseType: 'ERROR',
-        data: { errorReason: err.message }
+        data: { errorReason: err.message, canRetry: true, originalQuery: trimmed }
+      };
+    }
+  }
+
+  /**
+   * Forwards natural language / clinical / general questions to the server AI provider
+   */
+  private static async queryAIAssistant(
+    query: string,
+    context: AssistantContext,
+    history: AssistantMessage[] = []
+  ): Promise<AssistantMessage> {
+    if (!context.isOnline) {
+      return {
+        id: 'msg-' + Date.now(),
+        sender: 'assistant',
+        timestamp: Date.now(),
+        text: 'أنت حالياً في وضع عدم الاتصال (Offline). يمكنك الاستمرار في استخدام أوامر النظام السريعة، البحث في الأصناف، أو الاستفسار عن الأرصدة المخزنية والمالية المحلية.',
+        responseType: 'TEXT'
+      };
+    }
+
+    try {
+      // Gather safe local pharmacy ERP context facts (no guessing, strictly verified)
+      const state = db.getState();
+      const lowerQ = query.toLowerCase();
+      const matchedProducts = (state.products || [])
+        .filter((p) => !p.deleted_at && p.is_active)
+        .filter((p) => {
+          return (
+            (p.name_ar && p.name_ar.toLowerCase().includes(lowerQ)) ||
+            (p.name_en && p.name_en.toLowerCase().includes(lowerQ)) ||
+            (p.generic_name && p.generic_name.toLowerCase().includes(lowerQ))
+          );
+        })
+        .slice(0, 5)
+        .map((p) => {
+          const batches = (state.batches || []).filter((b) => b.product_id === p.id && b.status === 'active');
+          const stock = batches.reduce((sum, b) => sum + b.current_quantity, 0);
+          return {
+            name_ar: p.name_ar,
+            name_en: p.name_en,
+            generic_name: p.generic_name,
+            total_stock: stock,
+            unit: p.base_unit,
+            selling_price: (p.current_selling_price || 0) / 100
+          };
+        });
+
+      const cashbox = (state.cashboxes || [])[0];
+      const erpContext = {
+        currentScreen: context.currentScreen,
+        user: { name: context.currentUser.full_name || context.currentUser.username, role: context.currentUser.role_id },
+        pharmacyStats: {
+          totalActiveProducts: (state.products || []).filter((p) => !p.deleted_at).length,
+          lowStockProductsCount: (state.products || []).filter((p) => {
+            const stock = (state.batches || [])
+              .filter((b) => b.product_id === p.id && b.status === 'active')
+              .reduce((sum, b) => sum + b.current_quantity, 0);
+            return stock <= p.min_stock_level;
+          }).length,
+          mainCashboxBalance: cashbox ? cashbox.cached_balance / 100 : 0,
+          currency: state.profile?.currency || 'YER'
+        },
+        matchedProductsInDatabase: matchedProducts
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 18000); // 18s timeout
+
+      const res = await fetch('/api/assistant/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: query,
+          history: history.slice(-6).map((m) => ({ sender: m.sender, text: m.text })),
+          context: erpContext
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `خطأ من خادم المساعد الذكي (${res.status})`);
+      }
+
+      const data = await res.json();
+      return {
+        id: 'msg-' + Date.now(),
+        sender: 'assistant',
+        timestamp: Date.now(),
+        text: data.text || 'تمت معالجة السؤال بنجاح.',
+        responseType: 'TEXT'
+      };
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        return {
+          id: 'msg-' + Date.now(),
+          sender: 'assistant',
+          timestamp: Date.now(),
+          text: 'انتهت مهلة انتظار الرد من المساعد الذكي (18 ثانية). يرجى التأكد من اتصال الشبكة ثم إعادة المحاولة.',
+          responseType: 'ERROR',
+          data: { errorReason: 'Timeout', canRetry: true, originalQuery: query }
+        };
+      }
+
+      return {
+        id: 'msg-' + Date.now(),
+        sender: 'assistant',
+        timestamp: Date.now(),
+        text: err.message || 'تعذر الاتصال بالمساعد الذكي حالياً.',
+        responseType: 'ERROR',
+        data: { errorReason: err.message, canRetry: true, originalQuery: query }
       };
     }
   }

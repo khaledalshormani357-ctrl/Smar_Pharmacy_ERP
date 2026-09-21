@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Search,
   Barcode,
@@ -73,17 +73,21 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
   const currentCustomer = customers.find((c) => c.id === selectedCustomerId);
 
   // Barcode / Search Filter (supports barcode, code, name_ar, English/generic name)
-  const filteredProducts = products.filter((p) => {
-    if (!searchQuery.trim()) return false;
+  const filteredProducts = useMemo(() => {
+    if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase().trim();
-    return (
+    return products.filter((p) => (
       p.name_ar.toLowerCase().includes(q) ||
       (p.name_en && p.name_en.toLowerCase().includes(q)) ||
       (p.barcode && p.barcode.toLowerCase() === q) ||
       (p.generic_name && p.generic_name.toLowerCase().includes(q)) ||
       p.internal_code.toLowerCase().includes(q)
-    );
-  });
+    ));
+  }, [products, searchQuery]);
+
+  const displayedFilteredProducts = useMemo(() => {
+    return filteredProducts.slice(0, 30);
+  }, [filteredProducts]);
 
   // Handle direct barcode scanner hit (Exact match adds automatically)
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -363,38 +367,45 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
             {filteredProducts.length === 0 ? (
               <div className="p-3 text-center text-xs text-slate-400">لا يوجد دواء مطابق لهذا البحث</div>
             ) : (
-              filteredProducts.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => {
-                    addToCart(p);
-                    setSearchQuery('');
-                  }}
-                  className="w-full p-2.5 text-right flex items-center justify-between hover:bg-emerald-50/60 transition-colors"
-                >
-                  <div>
-                    <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                      <span>{p.name_ar}</span>
-                      {p.isNearExpiry && (
-                        <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md font-semibold">
-                          قريب الانتهاء
-                        </span>
-                      )}
+              <>
+                {displayedFilteredProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      addToCart(p);
+                      setSearchQuery('');
+                    }}
+                    className="w-full p-2.5 text-right flex items-center justify-between hover:bg-emerald-50/60 transition-colors"
+                  >
+                    <div>
+                      <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                        <span>{p.name_ar}</span>
+                        {p.isNearExpiry && (
+                          <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md font-semibold">
+                            قريب الانتهاء
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400 font-mono">
+                        {p.generic_name || p.internal_code}
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-400 font-mono">
-                      {p.generic_name || p.internal_code}
+                    <div className="text-left">
+                      <div className="font-bold font-mono text-emerald-700 text-xs">
+                        {Money.format(p.current_selling_price)}
+                      </div>
+                      <div className="text-[10px] text-slate-500">
+                        متاح: {p.totalBaseStock} {p.base_unit}
+                      </div>
                     </div>
+                  </button>
+                ))}
+                {filteredProducts.length > 30 && (
+                  <div className="p-2 text-center text-[10px] text-slate-400 bg-slate-50 font-medium">
+                    يتم عرض أول 30 نتيجة من أصل {filteredProducts.length} دواء مطابق. حدد البحث لمزيد من الدقة.
                   </div>
-                  <div className="text-left">
-                    <div className="font-bold font-mono text-emerald-700 text-xs">
-                      {Money.format(p.current_selling_price)}
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      متاح: {p.totalBaseStock} {p.base_unit}
-                    </div>
-                  </div>
-                </button>
-              ))
+                )}
+              </>
             )}
           </div>
         )}

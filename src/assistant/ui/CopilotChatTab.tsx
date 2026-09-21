@@ -24,7 +24,6 @@ import { ProductCardView } from './ProductCardView';
 import { BalanceCardView } from './BalanceCardView';
 import { ConfirmationCard } from './ConfirmationCard';
 import { User } from '../../types';
-import { db } from '../../db/sqlite';
 
 interface CopilotChatTabProps {
   currentUser: User;
@@ -50,7 +49,6 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
   ]);
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [lastFailedQuery, setLastFailedQuery] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -118,62 +116,25 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
 
     setMessages((prev) => [...prev, userMsg]);
     setIsProcessing(true);
-    setLastFailedQuery(null);
 
     try {
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 45000);
-      const state = db.getState();
-      const result = await fetch('/api/assistant/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          messages: [...messages, userMsg].map((message) => ({ role: message.sender, text: message.text })),
-          context: {
-            currentScreen,
-            userRole: currentUser.role_id,
-            productsCount: state.products.length,
-            suppliersCount: state.suppliers.length,
-            customersCount: state.customers.length,
-            purchasesCount: state.purchases.length,
-            salesCount: state.sales.length,
-            online: context.isOnline
-          }
-        })
-      });
-      window.clearTimeout(timeout);
-      const payload = await result.json().catch(() => ({}));
-      if (!result.ok || typeof payload.text !== 'string' || !payload.text.trim()) {
-        throw new Error(payload.error || 'تعذر الحصول على رد صالح من مزود الذكاء الاصطناعي.');
-      }
-      setMessages((prev) => [...prev, {
-        id: 'ai-' + Date.now(),
-        sender: 'assistant',
-        timestamp: Date.now(),
-        text: payload.text,
-        responseType: 'TEXT'
-      }]);
+      const response = await AssistantOrchestrator.processMessage(query, context, messages);
+      setMessages((prev) => [...prev, response]);
     } catch (err: any) {
-      const reason = err?.name === 'AbortError'
-        ? 'انتهت مهلة انتظار المساعد الذكي. تحقق من الاتصال ثم أعد المحاولة.'
-        : (err?.message || 'تعذر الاتصال بالمساعد الذكي.');
-      setLastFailedQuery(query);
-      setMessages((prev) => [...prev, {
-        id: 'err-' + Date.now(),
-        sender: 'assistant',
-        timestamp: Date.now(),
-        text: reason,
-        responseType: 'ERROR',
-        data: { errorReason: reason, retryQuery: query }
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: 'err-' + Date.now(),
+          sender: 'assistant',
+          timestamp: Date.now(),
+          text: `عذراً، حدث خطأ أثناء معالجة الطلب: ${err.message}`,
+          responseType: 'ERROR',
+          data: { errorReason: err.message, canRetry: true, originalQuery: query }
+        }
+      ]);
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const handleRetry = () => {
-    if (lastFailedQuery) handleSendMessage(lastFailedQuery);
   };
 
   const handleConfirmAction = async (operationKey: string) => {
@@ -356,18 +317,28 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
                   </div>
                 )}
 
-                {/* Error Card */}
+                {/* Error Card with Retry Button */}
                 {msg.responseType === 'ERROR' && (
-                  <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 my-2 text-rose-900 text-xs flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                    <div className="text-2xs font-medium leading-relaxed">
-                      {msg.data?.errorReason || msg.text}
-                      {msg.data?.retryQuery && (
-                        <button type="button" onClick={handleRetry} className="block mt-2 px-2.5 py-1.5 rounded-lg bg-rose-600 text-white font-bold">
-                          إعادة المحاولة
-                        </button>
-                      )}
+                  <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 my-2 text-rose-900 text-xs flex flex-col gap-2 shadow-2xs">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <div className="text-2xs font-medium leading-relaxed">
+                        {msg.data?.errorReason || msg.text}
+                      </div>
                     </div>
+                    {msg.data?.canRetry && msg.data?.originalQuery && (
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleSendMessage(msg.data.originalQuery)}
+                          disabled={isProcessing}
+                          className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg text-2xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span>إعادة المحاولة</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -376,9 +347,9 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
         ))}
 
         {isProcessing && (
-          <div className="flex items-center gap-2 text-slate-400 text-2xs py-2 px-3 bg-slate-50 rounded-xl w-fit">
-            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-            <span>جاري تحليل الطلب ومطابقة قواعد النظام...</span>
+          <div className="flex items-center gap-2 text-indigo-700 text-2xs py-2 px-3 bg-indigo-50/80 border border-indigo-100 rounded-xl w-fit shadow-2xs animate-pulse">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-spin" />
+            <span className="font-semibold">جاري التفكير والتواصل مع المساعد الصيدلاني الذكي...</span>
           </div>
         )}
 

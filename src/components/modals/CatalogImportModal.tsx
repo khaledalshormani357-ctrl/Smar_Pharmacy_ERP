@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   Database,
@@ -16,10 +16,16 @@ import {
   ArrowDownToLine,
   Loader2,
   ShieldCheck,
-  Info
+  Info,
+  Sparkles
 } from 'lucide-react';
-import { CatalogImportService, CatalogSeedData } from '../../services/CatalogImportService';
+import {
+  CatalogImportService,
+  DrugCatalogSeed,
+  CatalogImportProgress
+} from '../../services/CatalogImportService';
 import { Product } from '../../types';
+import { useBackHandler } from '../../hooks/useBackHandler';
 
 interface CatalogImportModalProps {
   isOpen: boolean;
@@ -33,14 +39,34 @@ export const CatalogImportModal: React.FC<CatalogImportModalProps> = ({
   onImportComplete
 }) => {
   const [loading, setLoading] = useState(true);
-  const [seedData, setSeedData] = useState<CatalogSeedData | null>(null);
+  const [seedData, setSeedData] = useState<DrugCatalogSeed | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [isImporting, setIsImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState({ imported: 0, total: 0, percent: 0 });
+  const [importProgress, setImportProgress] = useState<CatalogImportProgress>({
+    imported: 0,
+    total: 0,
+    percent: 0,
+    remaining: 0,
+    skippedDuplicates: 0,
+    errorsCount: 0,
+    currentBatch: 0,
+    totalBatches: 0,
+    stage: 'loading'
+  });
   const [importResult, setImportResult] = useState<any>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'report' | 'files'>('preview');
+
+  // Handle hardware Back button: close modal if not importing
+  useBackHandler('modal-catalog-import', isOpen, () => {
+    if (isImporting) {
+      return true; // Keep open while import is writing to DB
+    }
+    onClose();
+    return true;
+  }, 110);
 
   useEffect(() => {
     if (isOpen) {
@@ -67,8 +93,10 @@ export const CatalogImportModal: React.FC<CatalogImportModalProps> = ({
   const handleStartImport = async () => {
     setIsImporting(true);
     setImportResult(null);
+    setImportError(null);
     try {
       const res = await CatalogImportService.importCatalog({
+        batchSize: 60,
         onProgress: (prog) => {
           setImportProgress(prog);
         }
@@ -80,28 +108,43 @@ export const CatalogImportModal: React.FC<CatalogImportModalProps> = ({
       if (onImportComplete) {
         onImportComplete();
       }
-    } catch (err) {
-      console.error('Import failed:', err);
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || err?.message?.includes('إلغاء')) {
+        console.log('Import cancelled by user');
+      } else {
+        console.error('Import failed:', err);
+        setImportError(err?.message || 'حدث خطأ أثناء استيراد الدليل الدوائي');
+      }
     } finally {
       setIsImporting(false);
     }
   };
 
-  const filteredProducts = (seedData?.products || []).filter((p) => {
+  const handleCancelImport = () => {
+    CatalogImportService.cancelImport();
+  };
+
+  // High performance memoized filtering to avoid UI lockup
+  const filteredProducts = useMemo(() => {
+    if (!seedData?.products) return [];
     const q = searchQuery.toLowerCase().trim();
-    const matchesSearch =
-      !q ||
-      (p.name_en && p.name_en.toLowerCase().includes(q)) ||
-      (p.name_ar && p.name_ar.toLowerCase().includes(q)) ||
-      (p.generic_name && p.generic_name.toLowerCase().includes(q)) ||
-      (p.active_ingredient && p.active_ingredient.toLowerCase().includes(q)) ||
-      ((p as any).manufacturer_name && (p as any).manufacturer_name.toLowerCase().includes(q));
+    if (!q && !selectedCategory) return seedData.products;
 
-    const matchesCategory =
-      !selectedCategory || (p as any).therapeutic_category === selectedCategory;
+    return seedData.products.filter((p) => {
+      const matchesSearch =
+        !q ||
+        (p.name_en && p.name_en.toLowerCase().includes(q)) ||
+        (p.name_ar && p.name_ar.toLowerCase().includes(q)) ||
+        (p.generic_name && p.generic_name.toLowerCase().includes(q)) ||
+        (p.active_ingredient && p.active_ingredient.toLowerCase().includes(q)) ||
+        ((p as any).manufacturer_name && (p as any).manufacturer_name.toLowerCase().includes(q));
 
-    return matchesSearch && matchesCategory;
-  });
+      const matchesCategory =
+        !selectedCategory || (p as any).therapeutic_category === selectedCategory;
+
+      return matchesSearch && matchesCategory;
+    });
+  }, [seedData?.products, searchQuery, selectedCategory]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-xs">
@@ -168,6 +211,17 @@ export const CatalogImportModal: React.FC<CatalogImportModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {isImporting ? (
+              <button
+                onClick={handleCancelImport}
+                className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                title="إلغاء عملية الاستيراد الجارية بأمان"
+              >
+                <X className="w-4 h-4" />
+                <span>إلغاء الاستيراد</span>
+              </button>
+            ) : null}
+
             <button
               onClick={handleStartImport}
               disabled={isImporting}
@@ -224,6 +278,92 @@ export const CatalogImportModal: React.FC<CatalogImportModalProps> = ({
 
         {/* Body Content */}
         <div className="flex-1 overflow-y-auto p-6">
+          {/* Active Chunked Import Progress Card */}
+          {isImporting && (
+            <div className="mb-5 p-5 bg-gradient-to-br from-emerald-50 to-teal-50/70 border border-emerald-200/80 rounded-2xl shadow-xs animate-in fade-in duration-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2.5">
+                  <Loader2 className="w-5 h-5 text-emerald-600 animate-spin" />
+                  <div>
+                    <h4 className="text-xs font-bold text-emerald-950">
+                      جاري استيراد الدليل الوطني للأدوية (معالجة غير متزامنة لمنع تعليق النظام)
+                    </h4>
+                    <p className="text-[11px] text-emerald-700 mt-0.5">
+                      {importProgress.stage === 'loading' && 'جاري تحميل ملف الدليل المعتمد...'}
+                      {importProgress.stage === 'categories' && 'جاري استيراد التصنيفات العلاجية...'}
+                      {importProgress.stage === 'manufacturers' && 'جاري استيراد الشركات المصنعة...'}
+                      {importProgress.stage === 'products' &&
+                        `جاري استيراد دفعات الأصناف (الدفعة ${importProgress.currentBatch} من ${importProgress.totalBatches})...`}
+                      {importProgress.stage === 'finalizing' && 'جاري حفظ وفهرسة البيانات في التخزين الآمن...'}
+                      {importProgress.stage === 'completed' && 'اكتمل الاستيراد بنجاح!'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleCancelImport}
+                    className="px-2.5 py-1 text-[11px] bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-lg font-bold transition-colors"
+                  >
+                    إلغاء العملية
+                  </button>
+                  <div className="text-left font-mono font-black text-emerald-700 text-sm">
+                    {importProgress.percent}%
+                  </div>
+                </div>
+              </div>
+
+              {/* Progress Track */}
+              <div className="w-full h-2.5 bg-emerald-100/80 rounded-full overflow-hidden mb-3.5">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-150 rounded-full"
+                  style={{ width: `${importProgress.percent}%` }}
+                />
+              </div>
+
+              {/* Statistics Chips */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                <div className="bg-white/80 border border-emerald-200/60 rounded-xl px-2.5 py-1.5 flex items-center justify-between">
+                  <span className="text-slate-600">المستورد:</span>
+                  <span className="font-bold font-mono text-emerald-700">{importProgress.imported.toLocaleString('en-US')}</span>
+                </div>
+                <div className="bg-white/80 border border-emerald-200/60 rounded-xl px-2.5 py-1.5 flex items-center justify-between">
+                  <span className="text-slate-600">المتبقي:</span>
+                  <span className="font-bold font-mono text-slate-700">{importProgress.remaining.toLocaleString('en-US')}</span>
+                </div>
+                <div className="bg-white/80 border border-emerald-200/60 rounded-xl px-2.5 py-1.5 flex items-center justify-between">
+                  <span className="text-slate-600">تخطي تكرار:</span>
+                  <span className="font-bold font-mono text-amber-700">{importProgress.skippedDuplicates.toLocaleString('en-US')}</span>
+                </div>
+                <div className="bg-white/80 border border-emerald-200/60 rounded-xl px-2.5 py-1.5 flex items-center justify-between">
+                  <span className="text-slate-600">الدفعة:</span>
+                  <span className="font-bold font-mono text-blue-700">{importProgress.currentBatch} / {importProgress.totalBatches}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {importError && (
+            <div className="mb-4 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 text-rose-800 text-xs">
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">فشل في استيراد الدليل الدوائي</p>
+                <p className="mt-1 text-rose-700">{importError}</p>
+              </div>
+            </div>
+          )}
+
+          {importProgress.stage === 'cancelled' && !isImporting && (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-amber-800 text-xs">
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">تم إلغاء عملية الاستيراد بأمان</p>
+                <p className="mt-1 text-amber-700">
+                  تم التراجع عن التغييرات المؤقتة وإلغاء الاستيراد دون التأثير على قاعدة البيانات الحالية.
+                </p>
+              </div>
+            </div>
+          )}
+
           {importResult && (
             <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-3 text-emerald-800 text-xs">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />

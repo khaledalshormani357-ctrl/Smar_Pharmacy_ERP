@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, CheckCircle2, FileText, Ban, AlertTriangle, Calendar, User, DollarSign, Package, Printer, Download } from 'lucide-react';
 import { Sale, SaleItem, Customer } from '../../types';
+import { db } from '../../db/sqlite';
 import { Money } from '../../utils/money';
 import { DocumentService } from '../../services/DocumentService';
 import { PrintService } from '../../services/PrintService';
@@ -128,20 +129,26 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             <span>الأصناف ({items.length})</span>
             <span>المجموع</span>
           </div>
-          {items.map((item) => (
-            <div key={item.id} className="py-2.5 flex justify-between items-center text-xs">
-              <div>
-                <div className="font-bold text-slate-800">{item.unit_name}</div>
-                <div className="text-[11px] text-slate-400 font-mono">
-                  {item.quantity} × {Money.format(item.unit_price)}
-                  {item.discount_amount > 0 && ` (خصم: ${Money.format(item.discount_amount)})`}
+          {items.map((item) => {
+            const product = db.getState().products.find((p) => p.id === item.product_id);
+            return (
+              <div key={item.id} className="py-2.5 flex justify-between items-center text-xs">
+                <div>
+                  <div className="font-bold text-slate-800">
+                    {product ? product.name_ar : item.unit_name}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    {product ? `[${item.unit_name}] ` : ''}
+                    {item.quantity} × {Money.format(item.unit_price)}
+                    {item.discount_amount > 0 && ` (خصم: ${Money.format(item.discount_amount)})`}
+                  </div>
+                </div>
+                <div className="font-mono font-bold text-slate-900 text-sm">
+                  {Money.format(item.line_total)}
                 </div>
               </div>
-              <div className="font-mono font-bold text-slate-900 text-sm">
-                {Money.format(item.line_total)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Financial Summary */}

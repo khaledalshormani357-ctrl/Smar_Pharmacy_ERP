@@ -125,50 +125,19 @@ export function shapeArabic(text: string): string {
   return String.fromCharCode(...result);
 }
 
+import bidiFactory from 'bidi-js';
+
+const bidi = bidiFactory();
+
 /**
- * BiDi reversal: Takes shaped text, reverses Arabic runs, and preserves LTR runs (numbers, English, symbols)
- * so that the final string prints correctly when drawn from right to left in PDF engines.
+ * BiDi reversal: Takes shaped text and applies Unicode Bidirectional Algorithm (UBA)
+ * so that the final string prints correctly when drawn in PDF engines.
  */
 export function processBidiForPdf(text: string): string {
   if (!text) return '';
-
-  // 1. Shape Arabic characters
   const shaped = shapeArabic(text);
-
-  // 2. Break into tokens (Arabic runs vs LTR runs like numbers and Latin words)
-  const tokens: { text: string; isRtl: boolean }[] = [];
-  let currentRun = '';
-  let currentIsRtl: boolean | null = null;
-
-  for (let i = 0; i < shaped.length; i++) {
-    const char = shaped[i];
-    const code = char.charCodeAt(0);
-    const rtl = isArabic(code);
-
-    if (currentIsRtl === null) {
-      currentIsRtl = rtl;
-      currentRun += char;
-    } else if (currentIsRtl === rtl) {
-      currentRun += char;
-    } else {
-      tokens.push({ text: currentRun, isRtl: currentIsRtl });
-      currentRun = char;
-      currentIsRtl = rtl;
-    }
-  }
-  if (currentRun) {
-    tokens.push({ text: currentRun, isRtl: !!currentIsRtl });
-  }
-
-  // 3. For RTL rendering in PDF, reverse Arabic token strings, and order the tokens from right-to-left
-  const reversedTokens = tokens.map((tok) => {
-    if (tok.isRtl) {
-      return tok.text.split('').reverse().join('');
-    }
-    return tok.text;
-  });
-
-  return reversedTokens.reverse().join('');
+  const levels = bidi.getEmbeddingLevels(shaped, 'rtl');
+  return bidi.getReorderedString(shaped, levels);
 }
 
 export class ArabicShaper {

@@ -14,21 +14,98 @@ export interface PdfTableColumn {
   align?: 'right' | 'left' | 'center';
 }
 
+function isArabicChar(code: number): boolean {
+  return (
+    (code >= 0x0600 && code <= 0x06ff) ||
+    (code >= 0x0750 && code <= 0x077f) ||
+    (code >= 0x08a0 && code <= 0x08ff) ||
+    (code >= 0xfb50 && code <= 0xfdff) ||
+    (code >= 0xfe70 && code <= 0xfeff)
+  );
+}
+
+function splitIntoDirectionalChunks(text: string): { text: string; isArabic: boolean }[] {
+  if (!text) return [];
+  const chunks: { text: string; isArabic: boolean }[] = [];
+  let cur = '';
+  let curIsArabic: boolean | null = null;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const code = ch.charCodeAt(0);
+    const isNeutral = (ch === ' ' || ch === '\t' || ch === '-' || ch === ':' || ch === '.' || ch === ',' || ch === '/' || ch === '(' || ch === ')');
+
+    if (isNeutral) {
+      cur += ch;
+      continue;
+    }
+
+    const isAr = isArabicChar(code);
+    if (curIsArabic === null) {
+      curIsArabic = isAr;
+      cur += ch;
+    } else if (curIsArabic === isAr) {
+      cur += ch;
+    } else {
+      if (cur) chunks.push({ text: cur, isArabic: curIsArabic });
+      cur = ch;
+      curIsArabic = isAr;
+    }
+  }
+  if (cur) chunks.push({ text: cur, isArabic: !!curIsArabic });
+  return chunks;
+}
+
 export class PdfService {
   private static cachedFontBytes: Uint8Array | null = null;
 
   /**
-   * Loads font bytes from base64 safely
+   * Loads high-fidelity Arabic + Latin font bytes safely
    */
-  private static getFontBytes(): Uint8Array {
+  private static async getFontBytes(): Promise<Uint8Array> {
     if (this.cachedFontBytes) return this.cachedFontBytes;
 
+    // 1. In Node.js environment, check filesystem
+    if (typeof process !== 'undefined' && process.cwd) {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const candidatePaths = [
+          path.resolve(process.cwd(), 'public/fonts/FreeSerif.ttf'),
+          path.resolve(process.cwd(), 'dist/fonts/FreeSerif.ttf'),
+          '/usr/share/fonts/truetype/freefont/FreeSerif.ttf'
+        ];
+        for (const p of candidatePaths) {
+          if (fs.existsSync(p)) {
+            this.cachedFontBytes = new Uint8Array(fs.readFileSync(p));
+            return this.cachedFontBytes;
+          }
+        }
+      } catch {
+        // Fallback
+      }
+    }
+
+    // 2. In browser environment, fetch from public assets
+    if (typeof window !== 'undefined' && typeof fetch !== 'undefined') {
+      try {
+        const res = await fetch('/fonts/FreeSerif.ttf');
+        if (res.ok) {
+          const ab = await res.arrayBuffer();
+          this.cachedFontBytes = new Uint8Array(ab);
+          return this.cachedFontBytes;
+        }
+      } catch {
+        // Fallback
+      }
+    }
+
+    // 3. Embedded base64 fallback
     if (typeof Buffer !== 'undefined') {
       this.cachedFontBytes = Buffer.from(KACST_BOOK_BASE64, 'base64');
       return this.cachedFontBytes;
     }
 
-    // Browser environment fallback
     const binary = atob(KACST_BOOK_BASE64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
@@ -46,13 +123,13 @@ export class PdfService {
   }
 
   /**
-   * Initializes a PDFDocument with fontkit and Kacst Arabic Font
+   * Initializes a PDFDocument with fontkit and Arabic/Latin font
    */
   private static async initDoc(): Promise<{ doc: PDFDocument; font: PDFFont }> {
     const doc = await PDFDocument.create();
     doc.registerFontkit(fontkit);
-    const fontBytes = this.getFontBytes();
-    const font = await doc.embedFont(fontBytes);
+    const fontBytes = await this.getFontBytes();
+    const font = await doc.embedFont(fontBytes, { subset: true });
     return { doc, font };
   }
 
@@ -70,23 +147,41 @@ export class PdfService {
     options?: { align?: 'right' | 'left' | 'center'; width?: number }
   ) {
     if (!text) return;
-    const shaped = processBidiForPdf(text);
-    const textWidth = font.widthOfTextAtSize(shaped, size);
 
-    let drawX = x;
-    if (options?.align === 'right' && options?.width) {
-      drawX = x + options.width - textWidth;
-    } else if (options?.align === 'center' && options?.width) {
-      drawX = x + (options.width - textWidth) / 2;
+    const hasArabic = Array.from(text).some(c => isArabicChar(c.charCodeAt(0)));
+
+    if (!hasArabic) {
+      const textWidth = font.widthOfTextAtSize(text, size);
+      let drawX = x;
+      if (options?.align === 'right' && options?.width) {
+        drawX = x + options.width - textWidth;
+      } else if (options?.align === 'center' && options?.width) {
+        drawX = x + (options.width - textWidth) / 2;
+      }
+      page.drawText(text, { x: drawX, y, size, font, color });
+      return;
     }
 
-    page.drawText(shaped, {
-      x: drawX,
-      y,
-      size,
-      font,
-      color
-    });
+    const chunks = splitIntoDirectionalChunks(text);
+    const chunkWidths = chunks.map(c => font.widthOfTextAtSize(c.text, size));
+    const totalWidth = chunkWidths.reduce((a, b) => a + b, 0);
+
+    const targetWidth = options?.width || totalWidth;
+    let startRightX = x + targetWidth;
+
+    if (options?.align === 'left') {
+      startRightX = x + totalWidth;
+    } else if (options?.align === 'center') {
+      startRightX = x + (targetWidth - totalWidth) / 2 + totalWidth;
+    }
+
+    let curX = startRightX;
+    for (let i = 0; i < chunks.length; i++) {
+      const c = chunks[i];
+      const w = chunkWidths[i];
+      curX -= w;
+      page.drawText(c.text, { x: curX, y, size, font, color });
+    }
   }
 
   // ==========================================
