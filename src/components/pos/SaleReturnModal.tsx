@@ -288,7 +288,9 @@ export const SaleReturnModal: React.FC<SaleReturnModalProps> = ({
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex-1">
-                            <h4 className="text-xs font-bold text-slate-800">{item.product_name_snapshot}</h4>
+                            <h4 className="text-xs font-bold text-slate-800">
+                              {item.product_name_snapshot || db.getState().products.find((p) => p.id === item.product_id)?.name_ar || 'منتج'}
+                            </h4>
                             <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-slate-500">
                               <span>الوحدة: {item.unit_name}</span>
                               <span>•</span>

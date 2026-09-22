@@ -49,7 +49,7 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
   // New / Correction Purchase Form
   const [supplierId, setSupplierId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
-  const [paymentType, setPaymentType] = useState<'cash' | 'credit'>('credit');
+  const [paymentType, setPaymentType] = useState<'cash' | 'credit' | 'partial'>('credit');
   const [discountVal, setDiscountVal] = useState(0);
   const [correctionNote, setCorrectionNote] = useState<string | null>(null);
 

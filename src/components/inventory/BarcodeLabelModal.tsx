@@ -20,7 +20,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({
   const pharmacy = db.getState().profile;
 
   const displayBarcode = product.barcode || product.internal_code;
-  const displayPrice = batch?.selling_price || product.selling_price;
+  const displayPrice = batch?.selling_price || product.current_selling_price || 0;
   const displayExpiry = batch?.expiry_date || 'N/A';
   const displayBatch = batch?.batch_number || 'GEN-01';
 

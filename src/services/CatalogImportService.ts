@@ -170,6 +170,57 @@ export class CatalogImportService {
   }
 
   /**
+   * Lightweight paginated & searchable preview without loading entire catalog into React state
+   */
+  public static async getCatalogPreview(options?: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    category?: string;
+  }): Promise<{
+    items: Product[];
+    total: number;
+    categories: string[];
+  }> {
+    const seed = await this.loadSeedData();
+    let filtered = seed.products;
+
+    const uniqueCategories = Array.from(
+      new Set(
+        seed.products
+          .map((p) => (p as any).therapeutic_category)
+          .filter(Boolean)
+      )
+    ).sort();
+
+    const q = options?.search?.toLowerCase().trim();
+    if (q || options?.category) {
+      filtered = filtered.filter((p) => {
+        const matchesQ =
+          !q ||
+          (p.name_ar && p.name_ar.toLowerCase().includes(q)) ||
+          (p.name_en && p.name_en.toLowerCase().includes(q)) ||
+          (p.generic_name && p.generic_name.toLowerCase().includes(q)) ||
+          (p.active_ingredient && p.active_ingredient.toLowerCase().includes(q)) ||
+          ((p as any).manufacturer_name && (p as any).manufacturer_name.toLowerCase().includes(q));
+
+        const matchesCat = !options?.category || (p as any).therapeutic_category === options.category;
+        return matchesQ && matchesCat;
+      });
+    }
+
+    const page = Math.max(1, options?.page || 1);
+    const pageSize = Math.max(10, Math.min(100, options?.pageSize || 50));
+    const start = (page - 1) * pageSize;
+
+    return {
+      items: filtered.slice(start, start + pageSize),
+      total: filtered.length,
+      categories: uniqueCategories
+    };
+  }
+
+  /**
    * Safe, non-blocking async chunked import of drug catalog.
    * Features:
    * - Concurrency mutex lock (prevents duplicate simultaneous imports)

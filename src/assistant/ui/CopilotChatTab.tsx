@@ -43,13 +43,35 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
       id: 'welcome-1',
       sender: 'assistant',
       timestamp: Date.now(),
-      text: `مرحباً بك دكتور ${currentUser.name}. أنا مساعد الصيدلية الذكي (Smart Pharmacy Copilot).\n\nأفهم بنية التطبيق وصلاحياتك الحالية (${currentUser.role_id === 'admin' ? 'مدير النظام' : 'صيدلي'}). يمكنك سؤالي عن طريقة استخدام أي شاشة، أو الاستفسار عن الأرصدة والمخزون، أو تنفيذ عملياتك بأمان تحت تأكيدك المباشر.`,
+      text: `مرحباً بك دكتور ${currentUser.full_name || currentUser.username}. أنا مساعد الصيدلية الذكي (Smart Pharmacy Copilot).\n\nأفهم بنية التطبيق وصلاحياتك الحالية (${currentUser.role_id === 'admin' ? 'مدير النظام' : 'صيدلي'}). يمكنك سؤالي عن طريقة استخدام أي شاشة، أو الاستفسار عن الأرصدة والمخزون، أو تنفيذ عملياتك بأمان تحت تأكيدك المباشر.`,
       responseType: 'TEXT'
     }
   ]);
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [aiStatus, setAiStatus] = useState<{
+    configured: boolean;
+    provider: string;
+    model: string;
+    reachable: boolean;
+    lastError: string | null;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch('/api/assistant/status')
+      .then((r) => r.json())
+      .then((data) => setAiStatus(data))
+      .catch(() => {
+        setAiStatus({
+          configured: false,
+          provider: 'google-gemini',
+          model: 'gemini-3.8-flash',
+          reachable: false,
+          lastError: 'تعذر الاتصال بخادم التطبيق.'
+        });
+      });
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -176,14 +198,16 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
   return (
     <div className="flex flex-col h-[520px] max-h-[70vh] text-slate-800">
       {/* Copilot Header Context Bar */}
-      <div className="flex items-center justify-between px-3 py-2 bg-indigo-50/60 border-b border-indigo-100 rounded-xl mb-3 text-2xs">
+      <div className="flex items-center justify-between px-3 py-2 bg-indigo-50/60 border-b border-indigo-100 rounded-xl mb-2 text-2xs">
         <div className="flex items-center gap-2">
           <span className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${aiStatus?.configured && aiStatus?.reachable ? 'bg-emerald-400' : 'bg-amber-400'} opacity-75`} />
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${aiStatus?.configured && aiStatus?.reachable ? 'bg-emerald-500' : 'bg-amber-500'}`} />
           </span>
           <span className="font-bold text-indigo-950">
-            {context.isOnline ? 'مساعد متصل' : 'يعمل محلياً (Offline)'}
+            {aiStatus?.configured
+              ? (aiStatus.reachable ? 'متصل بمزود Gemini الذكي' : 'مفتاح مزود AI غير صالح')
+              : 'مزود الذكاء غير مهيأ (Offline)'}
           </span>
           <span className="text-slate-300">|</span>
           <span className="text-slate-600">
@@ -201,6 +225,23 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
           <span>مسح</span>
         </button>
       </div>
+
+      {/* Unconfigured Provider Banner */}
+      {aiStatus && !aiStatus.configured && (
+        <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-3 mb-2 text-xs">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-bold text-amber-900 leading-snug">
+                المساعد الذكي غير مُهيأ بعد. يرجى إعداد مفتاح API الخاص بخدمة الذكاء الاصطناعي (GEMINI_API_KEY) في متغيرات بيئة الخادم.
+              </p>
+              <p className="text-amber-700 text-2xs mt-1 leading-relaxed">
+                الوظائف المحلية المدمجة وأدلة النظام والبحث السريع تعمل بالكامل، بينما تتطلب الاستشارات الذكية وتحليل صور الفواتير ضبط مفتاح <code className="bg-amber-100/70 px-1 py-0.5 rounded font-mono text-amber-950">GEMINI_API_KEY</code> في متغيرات بيئة الخادم.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto space-y-3 px-1 pr-2 pb-2">

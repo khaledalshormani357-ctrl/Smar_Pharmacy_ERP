@@ -63,6 +63,14 @@ export const InvoiceScannerTab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [invoiceData, setInvoiceData] = useState<ExtractedInvoice | null>(null);
   const [postingSuccess, setPostingSuccess] = useState<{ invoiceId: string; invoiceNumber: string; totalAmount: number } | null>(null);
+  const [providerConfigured, setProviderConfigured] = useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    fetch('/api/assistant/status')
+      .then((r) => r.json())
+      .then((data) => setProviderConfigured(Boolean(data?.configured)))
+      .catch(() => setProviderConfigured(false));
+  }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -466,6 +474,23 @@ export const InvoiceScannerTab: React.FC = () => {
 
   return (
     <div className="space-y-4 text-xs">
+      {/* Unconfigured Provider Banner */}
+      {providerConfigured === false && (
+        <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-3 text-xs">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-bold text-amber-900 leading-snug">
+                تحليل الصور غير متاح حاليًا. لم يتم تفعيل مزود تحليل الصور (GEMINI_API_KEY) في متغيرات بيئة الخادم.
+              </p>
+              <p className="text-amber-700 text-2xs mt-1 leading-relaxed">
+                لاستخدام المسح الضوئي الذكي واستخراج بيانات الفواتير بدقة، يرجى ضبط مفتاح <code className="bg-amber-100/70 px-1 py-0.5 rounded font-mono text-amber-950">GEMINI_API_KEY</code> في متغيرات بيئة الخادم.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Success Notification */}
       {postingSuccess && (
         <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-3 animate-in fade-in zoom-in-95">

@@ -22,6 +22,7 @@ import { InventoryService } from '../../services/InventoryService';
 import { StockService } from '../../services/StockService';
 import { Product, Batch, Category, Manufacturer } from '../../types';
 import { Money } from '../../utils/money';
+import { normalizeArabicSearchText } from '../../utils/inputSafety';
 import { NumericInput } from '../ui/NumericInput';
 import { ProductDetailsModal } from './ProductDetailsModal';
 import { OpeningStockModal } from './OpeningStockModal';
@@ -92,17 +93,35 @@ export const InventoryView: React.FC = () => {
     setManufacturers(db.getState().manufacturers || []);
   };
 
+  // High-performance single-pass summary counts
+  const productCounts = useMemo(() => {
+    let low = 0;
+    let reorder = 0;
+    let nearExpiry = 0;
+    let expired = 0;
+    for (const p of products) {
+      if (p.isLowStock) low++;
+      if (p.isNeedsReorder) reorder++;
+      if (p.isNearExpiry) nearExpiry++;
+      if (p.isExpired) expired++;
+    }
+    return { low, reorder, nearExpiry, expired, total: products.length };
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
+    const rawQuery = searchQuery.trim();
+    const qLower = rawQuery.toLowerCase();
+    const qArabic = normalizeArabicSearchText(rawQuery);
+
     return products.filter((p) => {
       const matchesQuery =
-        !q ||
-        p.name_ar.toLowerCase().includes(q) ||
-        (p.name_en && p.name_en.toLowerCase().includes(q)) ||
-        (p.barcode && p.barcode.toLowerCase().includes(q)) ||
-        (p.generic_name && p.generic_name.toLowerCase().includes(q)) ||
-        (p.active_ingredient && p.active_ingredient.toLowerCase().includes(q)) ||
-        p.internal_code.toLowerCase().includes(q);
+        !rawQuery ||
+        (p.name_ar && normalizeArabicSearchText(p.name_ar).includes(qArabic)) ||
+        (p.name_en && p.name_en.toLowerCase().includes(qLower)) ||
+        (p.barcode && p.barcode.toLowerCase().includes(qLower)) ||
+        (p.generic_name && (p.generic_name.toLowerCase().includes(qLower) || normalizeArabicSearchText(p.generic_name).includes(qArabic))) ||
+        (p.active_ingredient && (p.active_ingredient.toLowerCase().includes(qLower) || normalizeArabicSearchText(p.active_ingredient).includes(qArabic))) ||
+        p.internal_code.toLowerCase().includes(qLower);
 
       if (!matchesQuery) return false;
       if (selectedCategoryFilter && p.category_id !== selectedCategoryFilter) return false;
@@ -287,11 +306,11 @@ export const InventoryView: React.FC = () => {
           <span className="text-[10px] text-slate-400 block font-semibold">تنبيهات الصلاحية والنواقص</span>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className="font-bold text-xs text-rose-600 font-mono">
-              {products.filter((p) => p.isExpired).length} منتهي
+              {productCounts.expired} منتهي
             </span>
             <span className="text-slate-300">•</span>
             <span className="font-bold text-xs text-amber-600 font-mono">
-              {products.filter((p) => p.isLowStock).length} نواقص
+              {productCounts.low} نواقص
             </span>
           </div>
         </div>
@@ -320,7 +339,7 @@ export const InventoryView: React.FC = () => {
                 : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
             }`}
           >
-            الكل ({products.length})
+            الكل ({productCounts.total})
           </button>
           <button
             onClick={() => setFilterType('low')}
@@ -330,7 +349,7 @@ export const InventoryView: React.FC = () => {
                 : 'bg-white border border-slate-200 text-amber-700 hover:bg-amber-50'
             }`}
           >
-            تحت حد الخطر ({products.filter((p) => p.isLowStock).length})
+            تحت حد الخطر ({productCounts.low})
           </button>
           <button
             onClick={() => setFilterType('reorder')}
@@ -340,7 +359,7 @@ export const InventoryView: React.FC = () => {
                 : 'bg-white border border-slate-200 text-blue-700 hover:bg-blue-50'
             }`}
           >
-            إعادة الطلب ({products.filter((p) => p.isNeedsReorder).length})
+            إعادة الطلب ({productCounts.reorder})
           </button>
           <button
             onClick={() => setFilterType('expiring')}
@@ -350,7 +369,7 @@ export const InventoryView: React.FC = () => {
                 : 'bg-white border border-slate-200 text-orange-700 hover:bg-orange-50'
             }`}
           >
-            صلاحية وشيكة ({products.filter((p) => p.isNearExpiry).length})
+            صلاحية وشيكة ({productCounts.nearExpiry})
           </button>
           <button
             onClick={() => setFilterType('expired')}
@@ -360,7 +379,7 @@ export const InventoryView: React.FC = () => {
                 : 'bg-white border border-slate-200 text-rose-700 hover:bg-rose-50'
             }`}
           >
-            منتهية الصلاحية ({products.filter((p) => p.isExpired).length})
+            منتهية الصلاحية ({productCounts.expired})
           </button>
         </div>
       </div>

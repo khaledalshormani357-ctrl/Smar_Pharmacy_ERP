@@ -15,10 +15,34 @@ export class InventoryService {
     const thresholdDays = state.profile?.near_expiry_days || 90;
     const thresholdDateStr = new Date(Date.now() + thresholdDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
+    // Pre-index batches by product_id for O(1) lookups instead of O(N*M) full scan
+    const batchesByProduct = new Map<string, Batch[]>();
+    for (const b of state.batches) {
+      if (b.status === 'active') {
+        const list = batchesByProduct.get(b.product_id);
+        if (list) {
+          list.push(b);
+        } else {
+          batchesByProduct.set(b.product_id, [b]);
+        }
+      }
+    }
+
+    // Pre-index unit conversions by product_id
+    const conversionsByProduct = new Map<string, UnitConversion[]>();
+    for (const uc of state.unit_conversions) {
+      const list = conversionsByProduct.get(uc.product_id);
+      if (list) {
+        list.push(uc);
+      } else {
+        conversionsByProduct.set(uc.product_id, [uc]);
+      }
+    }
+
     return state.products
       .filter((p) => (includeInactive ? !p.deleted_at : p.is_active && !p.deleted_at))
       .map((product) => {
-        const productBatches = state.batches.filter((b) => b.product_id === product.id && b.status === 'active');
+        const productBatches = batchesByProduct.get(product.id) || [];
         const totalBaseStock = productBatches.reduce((acc, b) => acc + b.current_quantity, 0);
 
         // Find closest expiry batch among positive stock
@@ -34,7 +58,7 @@ export class InventoryService {
         const isLowStock = totalBaseStock <= product.min_stock_level;
         const isNeedsReorder = totalBaseStock <= product.reorder_level;
 
-        const conversions = state.unit_conversions.filter((uc) => uc.product_id === product.id);
+        const conversions = conversionsByProduct.get(product.id) || [];
 
         return {
           ...product,

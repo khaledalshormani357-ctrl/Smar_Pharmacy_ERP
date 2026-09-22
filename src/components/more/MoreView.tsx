@@ -355,17 +355,29 @@ export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (content) {
-        if (window.confirm('هل أنت متأكد من استعادة هذه النسخة؟ سيتم استبدال البيانات الحالية.')) {
-          const success = db.importJSON(content);
-          if (success) {
-            showNotification('success', 'تمت استعادة النسخة الاحتياطية بنجاح.');
-          } else {
-            showNotification('error', 'فشلت استعادة البيانات.');
+      try {
+        const content = event.target?.result as string;
+        if (content) {
+          const proceed = typeof window !== 'undefined' && window.confirm 
+            ? window.confirm('هل أنت متأكد من استعادة هذه النسخة؟ سيتم استبدال البيانات الحالية.')
+            : true;
+
+          if (proceed) {
+            const success = db.importJSON(content);
+            if (success) {
+              showNotification('success', 'تمت استعادة النسخة الاحتياطية بنجاح.');
+            } else {
+              showNotification('error', 'فشلت استعادة البيانات.');
+            }
           }
         }
+      } catch (err) {
+        console.error('Failed to parse backup:', err);
+        showNotification('error', 'ملف النسخة الاحتياطية غير صالح أو تالف.');
       }
+    };
+    reader.onerror = () => {
+      showNotification('error', 'تعذر قراءة ملف النسخة الاحتياطية.');
     };
     reader.readAsText(file);
   };

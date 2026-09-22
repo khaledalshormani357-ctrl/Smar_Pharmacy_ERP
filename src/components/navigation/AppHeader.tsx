@@ -1,6 +1,7 @@
 import React from 'react';
 import { RotateCw, Settings, Power, Pill, Smartphone } from 'lucide-react';
 import { PharmacyProfile, User } from '../../types';
+import { AppBrandIcon } from '../common/AppBrandIcon';
 
 interface AppHeaderProps {
   profile: PharmacyProfile;
@@ -24,9 +25,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       <div className="flex items-center justify-between gap-3 max-w-lg mx-auto md:max-w-4xl">
         {/* Profile Branding */}
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 shrink-0">
-            <Pill className="w-5 h-5" />
-          </div>
+          <AppBrandIcon className="w-10 h-10" />
           <div className="min-w-0">
             <h1 className="text-sm font-black text-slate-900 truncate leading-tight">
               {profile.name_ar || 'صيدليتي الذكية'}

@@ -9,15 +9,17 @@ import { Money } from '../../utils/money';
 
 interface StatementModalProps {
   type: 'customer' | 'supplier';
-  entityId: string;
+  entityId?: string;
+  partyId?: string;
   onClose: () => void;
 }
 
-export const StatementModal: React.FC<StatementModalProps> = ({ type, entityId, onClose }) => {
+export const StatementModal: React.FC<StatementModalProps> = ({ type, entityId, partyId, onClose }) => {
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  const targetId = entityId || partyId || '';
   const now = Date.now();
   let startDate: number | undefined;
 
@@ -33,8 +35,8 @@ export const StatementModal: React.FC<StatementModalProps> = ({ type, entityId, 
 
   const isCustomer = type === 'customer';
   const statement = isCustomer
-    ? FinanceService.getCustomerStatement(entityId, startDate, now)
-    : FinanceService.getSupplierStatement(entityId, startDate, now);
+    ? FinanceService.getCustomerStatement(targetId, startDate, now)
+    : FinanceService.getSupplierStatement(targetId, startDate, now);
 
   const entity = isCustomer ? (statement as any).customer : (statement as any).supplier;
   const items = statement.items;

@@ -16,6 +16,7 @@ import { User, PharmacyProfile } from './types';
 import { Bot, Sparkles, AlertCircle } from 'lucide-react';
 import { BackNavigationService } from './services/BackNavigationService';
 import { useBackHandler } from './hooks/useBackHandler';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 export function App() {
   const [currentTab, setCurrentTab] = useState<TabKey>('dashboard');
@@ -157,33 +158,35 @@ export function App() {
 
       {/* Main Screen Views */}
       <main className="w-full max-w-lg mx-auto md:max-w-5xl px-3 sm:px-4 py-4">
-        {currentTab === 'dashboard' && (
-          <QuickServicesView
-            currentUser={currentUser}
-            onNavigate={(tab) => {
-              if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'more') {
-                setCurrentTab(tab);
-              } else {
-                setCurrentTab('dashboard');
-              }
-            }}
-          />
-        )}
+        <ErrorBoundary title="خطأ في تحميل الشاشة الحالية" subTitle="تم احتواء الخطأ البرمجي بأمان لمنع انهيار التطبيق.">
+          {currentTab === 'dashboard' && (
+            <QuickServicesView
+              currentUser={currentUser}
+              onNavigate={(tab) => {
+                if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'more') {
+                  setCurrentTab(tab);
+                } else {
+                  setCurrentTab('dashboard');
+                }
+              }}
+            />
+          )}
 
-        {currentTab === 'pos' && (
-          <POSView
-            currentUser={currentUser}
-            onSaleCompleted={() => {
-              // Stay on POS or update status
-            }}
-          />
-        )}
+          {currentTab === 'pos' && (
+            <POSView
+              currentUser={currentUser}
+              onSaleCompleted={() => {
+                // Stay on POS or update status
+              }}
+            />
+          )}
 
-        {currentTab === 'inventory' && <InventoryView />}
+          {currentTab === 'inventory' && <InventoryView />}
 
-        {currentTab === 'purchases' && <PurchasesView currentUser={currentUser} />}
+          {currentTab === 'purchases' && <PurchasesView currentUser={currentUser} />}
 
-        {currentTab === 'more' && <MoreView currentUser={currentUser} />}
+          {currentTab === 'more' && <MoreView currentUser={currentUser} />}
+        </ErrorBoundary>
       </main>
 
       {/* Floating Smart Pharmacist Assistant Button */}

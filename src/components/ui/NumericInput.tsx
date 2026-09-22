@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { cleanNumericDraft, parseSafeNumber } from '../../utils/inputSafety';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { cleanNumericDraft, parseSafeNumber, normalizeInputText } from '../../utils/inputSafety';
 
 interface NumericInputProps {
   id?: string;
   value: number;
   onChange: (val: number) => void;
+  onBlur?: (val: number) => void;
   placeholder?: string;
   className?: string;
   disabled?: boolean;
@@ -14,12 +15,14 @@ interface NumericInputProps {
   suffix?: string;
   allowDecimals?: boolean;
   allowNegative?: boolean;
+  autoSelectOnFocus?: boolean;
 }
 
 export const NumericInput: React.FC<NumericInputProps> = ({
   id,
   value,
   onChange,
+  onBlur,
   placeholder = '0.00',
   className = '',
   disabled = false,
@@ -29,50 +32,96 @@ export const NumericInput: React.FC<NumericInputProps> = ({
   suffix,
   allowDecimals = true,
   allowNegative = false,
+  autoSelectOnFocus = false,
 }) => {
-  const [text, setText] = useState(() => (value === 0 ? '' : String(value)));
-  const focusedRef = useRef(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  // Draft text representation of the number
+  const [draft, setDraft] = useState<string>(() => (value === 0 ? '' : String(value)));
 
-  // Sync with external value changes ONLY when NOT focused
+  const isEditingRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const lastCommittedNumRef = useRef<number>(value);
+  const cursorPositionRef = useRef<number | null>(null);
+
+  // Sync with external value changes ONLY when the user is NOT actively editing/focused
   useEffect(() => {
-    if (focusedRef.current) return;
-    const currentParsed = parseSafeNumber(text, 0);
-    if (currentParsed === value && text !== '') return;
-    setText(value === 0 ? '' : String(value));
+    const isCurrentlyFocused =
+      typeof document !== 'undefined' && inputRef.current === document.activeElement;
+
+    if (isEditingRef.current || isCurrentlyFocused) {
+      // User is actively editing or element is focused; NEVER overwrite the user's active draft!
+      return;
+    }
+
+    if (value !== lastCommittedNumRef.current) {
+      lastCommittedNumRef.current = value;
+      setDraft(value === 0 ? '' : String(value));
+    }
   }, [value]);
 
+  // Restore cursor position after React re-renders when editing in the middle of text
+  useLayoutEffect(() => {
+    if (cursorPositionRef.current !== null && inputRef.current) {
+      const pos = Math.min(cursorPositionRef.current, inputRef.current.value.length);
+      inputRef.current.setSelectionRange(pos, pos);
+      cursorPositionRef.current = null;
+    }
+  });
+
+  const handleFocus = (event: React.FocusEvent<HTMLInputElement>) => {
+    isEditingRef.current = true;
+    if (autoSelectOnFocus) {
+      event.target.select();
+    }
+  };
+
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    focusedRef.current = true;
+    isEditingRef.current = true;
     const rawVal = event.target.value;
+    const currentCursor = event.target.selectionStart;
 
-    // Clean and normalize the draft string (handles Arabic/Persian digits, multiple dots, etc.)
-    const cleaned = cleanNumericDraft(rawVal, allowDecimals);
+    // 1. Normalize Arabic and Persian numerals to ASCII digits (1-to-1 length mapping)
+    const normalized = normalizeInputText(rawVal);
 
-    // If negative is not allowed, strip minus sign
+    // 2. Clean while preserving incomplete drafts during typing ("", "-", "0.", ".")
+    const cleaned = cleanNumericDraft(normalized, allowDecimals);
     const finalDraft = allowNegative ? cleaned : cleaned.replace(/-/g, '');
 
-    setText(finalDraft);
+    // Track cursor position to prevent jumping to the end
+    cursorPositionRef.current = currentCursor;
 
-    // Parse safe value
+    // Update draft state (user can freely delete to empty string "")
+    setDraft(finalDraft);
+
+    // Parse numeric value for parent calculation without mutating the draft text
     const parsed = parseSafeNumber(finalDraft, 0);
+    lastCommittedNumRef.current = parsed;
     onChange(parsed);
   };
 
-  const handleFocus = () => {
-    focusedRef.current = true;
-  };
-
   const handleBlur = () => {
-    focusedRef.current = false;
-    const cleaned = cleanNumericDraft(text, allowDecimals);
+    isEditingRef.current = false;
+    cursorPositionRef.current = null;
+
+    // On blur: format and finalize the value cleanly
+    const cleaned = cleanNumericDraft(draft, allowDecimals);
     let num = parseSafeNumber(cleaned, 0);
 
     if (min !== undefined) num = Math.max(min, num);
     if (max !== undefined) num = Math.min(max, num);
 
-    setText(num === 0 ? '' : String(num));
+    lastCommittedNumRef.current = num;
+    setDraft(num === 0 ? '' : String(num));
     onChange(num);
+    if (onBlur) {
+      onBlur(num);
+    }
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // Ensure standard Backspace & Delete behavior without interference
+    if (event.key === 'Backspace' || event.key === 'Delete') {
+      isEditingRef.current = true;
+    }
   };
 
   return (
@@ -84,13 +133,15 @@ export const NumericInput: React.FC<NumericInputProps> = ({
         inputMode={allowDecimals ? 'decimal' : 'numeric'}
         autoComplete="off"
         autoCorrect="off"
+        autoCapitalize="off"
         spellCheck="false"
         step={step}
         disabled={disabled}
-        value={text}
+        value={draft}
         onFocus={handleFocus}
         onChange={handleChange}
         onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         dir="ltr"
         className={`w-full px-3 py-2 text-left font-mono text-slate-800 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all placeholder:text-slate-300 disabled:bg-slate-50 disabled:text-slate-400 ${
@@ -105,4 +156,3 @@ export const NumericInput: React.FC<NumericInputProps> = ({
     </div>
   );
 };
-

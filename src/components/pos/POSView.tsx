@@ -21,6 +21,7 @@ import { DocumentService } from '../../services/DocumentService';
 import { CustomerRepository, SaleRepository } from '../../db/repositories';
 import { CartItem, Customer, Sale, User } from '../../types';
 import { Money } from '../../utils/money';
+import { normalizeArabicSearchText } from '../../utils/inputSafety';
 import { NumericInput } from '../ui/NumericInput';
 import { NewCustomerModal } from './NewCustomerModal';
 import { InvoicePreviewModal } from './InvoicePreviewModal';
@@ -72,16 +73,19 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
   // Selected Customer Details
   const currentCustomer = customers.find((c) => c.id === selectedCustomerId);
 
-  // Barcode / Search Filter (supports barcode, code, name_ar, English/generic name)
+  // Barcode / Search Filter (supports barcode, code, name_ar, English/generic name with Arabic normalization)
   const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLowerCase().trim();
+    const raw = searchQuery.trim();
+    if (!raw) return [];
+    const qLower = raw.toLowerCase();
+    const qArabic = normalizeArabicSearchText(raw);
+
     return products.filter((p) => (
-      p.name_ar.toLowerCase().includes(q) ||
-      (p.name_en && p.name_en.toLowerCase().includes(q)) ||
-      (p.barcode && p.barcode.toLowerCase() === q) ||
-      (p.generic_name && p.generic_name.toLowerCase().includes(q)) ||
-      p.internal_code.toLowerCase().includes(q)
+      (p.name_ar && normalizeArabicSearchText(p.name_ar).includes(qArabic)) ||
+      (p.name_en && p.name_en.toLowerCase().includes(qLower)) ||
+      (p.barcode && p.barcode.toLowerCase() === qLower) ||
+      (p.generic_name && (p.generic_name.toLowerCase().includes(qLower) || normalizeArabicSearchText(p.generic_name).includes(qArabic))) ||
+      p.internal_code.toLowerCase().includes(qLower)
     ));
   }, [products, searchQuery]);
 

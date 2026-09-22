@@ -8,6 +8,78 @@ import 'dotenv/config';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Standard recommended Gemini model as per AI Studio guidelines
+const GEMINI_MODEL = 'gemini-3.8-flash';
+
+// Lazy initialization for Gemini client
+let aiClient: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
+  if (!aiClient) {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      throw new Error('GEMINI_API_KEY_MISSING');
+    }
+    aiClient = new GoogleGenAI({
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'smart-pharmacy-erp',
+        },
+      },
+    });
+  }
+  return aiClient;
+}
+
+/**
+ * Classifies an upstream Gemini/network error into standardized ERP error codes
+ */
+function classifyError(err: any): { code: string; message: string; httpStatus: number } {
+  const errMsg = String(err?.message || err || '');
+  const status = err?.status || err?.statusCode || 0;
+
+  if (errMsg.includes('GEMINI_API_KEY_MISSING') || !process.env.GEMINI_API_KEY) {
+    return {
+      code: 'AI_NOT_CONFIGURED',
+      message: 'المساعد الذكي غير مُهيأ بعد. يرجى إعداد مفتاح API الخاص بخدمة الذكاء الاصطناعي (GEMINI_API_KEY) في متغيرات بيئة الخادم.',
+      httpStatus: 503,
+    };
+  }
+  if (status === 401 || status === 403 || /api[ _-]?key|unauthorized|permission_denied/i.test(errMsg)) {
+    return {
+      code: 'AI_UNAUTHORIZED',
+      message: 'مفتاح مزود الذكاء الاصطناعي غير مصرح له أو غير صالح. يرجى مراجعة صلاحيات GEMINI_API_KEY.',
+      httpStatus: 401,
+    };
+  }
+  if (status === 429 || /quota|rate[ _-]?limit|resource_exhausted/i.test(errMsg)) {
+    return {
+      code: 'AI_RATE_LIMITED',
+      message: 'تم تجاوز حد الاستخدام المسموح لدى مزود الذكاء الاصطناعي. يرجى الانتظار قليلاً ثم إعادة المحاولة.',
+      httpStatus: 429,
+    };
+  }
+  if (/timeout|abort|deadline/i.test(errMsg)) {
+    return {
+      code: 'AI_TIMEOUT',
+      message: 'انتهت مهلة استجابة مزود الذكاء الاصطناعي (Timeout). يرجى المحاولة مرة أخرى.',
+      httpStatus: 504,
+    };
+  }
+  if (/network|econnrefused|fetch failed|enotfound/i.test(errMsg)) {
+    return {
+      code: 'AI_NETWORK_ERROR',
+      message: 'تعذر الاتصال بمزود الذكاء الاصطناعي عبر الشبكة. يرجى التحقق من اتصال الإنترنت.',
+      httpStatus: 503,
+    };
+  }
+  return {
+    code: 'AI_PROVIDER_ERROR',
+    message: 'حدث خطأ أثناء معالجة الطلب لدى مزود الذكاء الاصطناعي. يرجى إعادة المحاولة.',
+    httpStatus: 502,
+  };
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -20,83 +92,90 @@ async function startServer() {
     res.json({ status: 'ok', timestamp: Date.now() });
   });
 
-  app.post('/api/assistant/chat', async (req, res) => {
-    try {
-      const { messages, context } = req.body || {};
-      if (!process.env.GEMINI_API_KEY) {
-        return res.status(503).json({ error: 'المساعد الذكي غير متاح حاليًا: لم يتم تفعيل مزود الذكاء الاصطناعي.' });
-      }
-      if (!Array.isArray(messages) || messages.length === 0) {
-        return res.status(400).json({ error: 'يرجى إرسال سؤال للمساعد.' });
-      }
-      const ai = getAI();
-      const safeMessages = messages.slice(-12).map((message: any) => ({
-        role: message.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: String(message.text || '').slice(0, 4000) }]
-      }));
-      const systemInstruction = `أنت مساعد صيدلي داخل نظام Smart Pharmacy ERP. أجب بالعربية الواضحة وباختصار مفيد.
-لا تخترع أرصدة أو مبيعات أو مشتريات أو بيانات مرضى؛ استخدم فقط السياق المرسل، وإذا لم توجد البيانات قل ذلك صراحة.
-لا تخترع جرعات أو تشخيصات أو تداخلات أو بدائل علاجية. المعلومات الدوائية العامة إرشادية وليست قرارًا علاجيًا.
-لا تنفذ أي تعديل مالي أو مخزني من خلال الدردشة.
-سياق التطبيق الحالي: ${JSON.stringify(context || {})}`;
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: safeMessages,
-        config: { systemInstruction, temperature: 0.2, maxOutputTokens: 1200 }
+  // Real AI Provider Status Gate
+  app.get('/api/assistant/status', async (_req, res) => {
+    const hasKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0);
+    if (!hasKey) {
+      return res.json({
+        configured: false,
+        provider: 'google-gemini',
+        model: GEMINI_MODEL,
+        reachable: false,
+        lastError: 'AI_NOT_CONFIGURED: مفتاح GEMINI_API_KEY غير مهيأ في متغيرات بيئة الخادم.',
       });
+    }
+
+    try {
+      const startTime = Date.now();
+      const ai = getAI();
+      // Fast lightweight ping
+      const response = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [{ role: 'user', parts: [{ text: 'PING' }] }],
+        config: { maxOutputTokens: 5, temperature: 0.1 },
+      });
+      const latency = Date.now() - startTime;
       const text = (response.text || '').trim();
-      if (!text) return res.status(502).json({ error: 'عاد مزود الذكاء الاصطناعي برد فارغ.' });
-      return res.json({ text, provider: 'gemini', model: 'gemini-3.6-flash' });
+
+      return res.json({
+        configured: true,
+        provider: 'google-gemini',
+        model: GEMINI_MODEL,
+        reachable: text.length > 0,
+        latencyMs: latency,
+        lastError: null,
+      });
     } catch (err: any) {
-      console.error('Assistant provider error:', err?.message || 'unknown');
-      return res.status(502).json({ error: 'تعذر الاتصال بخدمة المساعد الذكي. حاول مرة أخرى.' });
+      const classified = classifyError(err);
+      return res.json({
+        configured: true,
+        provider: 'google-gemini',
+        model: GEMINI_MODEL,
+        reachable: false,
+        lastError: `${classified.code}: ${classified.message}`,
+      });
     }
   });
 
-  // Lazy initialization for Gemini client
-  let aiClient: GoogleGenAI | null = null;
-  function getAI(): GoogleGenAI {
-    if (!aiClient) {
-      const key = process.env.GEMINI_API_KEY;
-      if (!key) {
-        throw new Error('مفتاح GEMINI_API_KEY غير متوفر في متغيرات البيئة.');
-      }
-      aiClient = new GoogleGenAI({
-        apiKey: key,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
-      });
-    }
-    return aiClient;
-  }
-
   // AI Assistant Copilot Endpoint for Pharmacy ERP
   app.post('/api/assistant/chat', async (req, res) => {
+    const startTime = Date.now();
     try {
-      const { message, history, context } = req.body;
-      if (!message || typeof message !== 'string' || !message.trim()) {
-        return res.status(400).json({ error: 'يرجى إرسال نص الرسالة أو السؤال.' });
+      const { message, messages, history, context } = req.body || {};
+
+      // Determine user query text
+      let queryText = '';
+      if (typeof message === 'string' && message.trim()) {
+        queryText = message.trim();
+      } else if (Array.isArray(messages) && messages.length > 0) {
+        const lastMsg = messages[messages.length - 1];
+        queryText = String(lastMsg?.text || lastMsg?.content || '').trim();
+      }
+
+      if (!queryText) {
+        return res.status(400).json({
+          code: 'AI_INVALID_REQUEST',
+          error: 'يرجى إرسال نص الرسالة أو السؤال للمساعد الذكي.',
+        });
       }
 
       if (!process.env.GEMINI_API_KEY) {
         return res.status(503).json({
-          error: 'خدمة المساعد الذكي غير مفعلة حالياً. لم يتم ضبط مفتاح الذكاء الاصطناعي (GEMINI_API_KEY) في الخادم.',
+          code: 'AI_NOT_CONFIGURED',
+          error: 'المساعد الذكي غير مُهيأ بعد. يرجى إعداد مفتاح API الخاص بخدمة الذكاء الاصطناعي (GEMINI_API_KEY) في متغيرات بيئة الخادم.',
         });
       }
 
       const ai = getAI();
 
       // Formulate Grounded Pharmacy Copilot System Prompt
-      const systemPrompt = `أنت مساعد صيدلية ذكي ومستشار أنظمة صيدلانية متقدم (Smart Pharmacy Copilot) يعمل داخل نظام إدارة الصيدليات الفعلي (Pharmacy ERP).
+      const systemPrompt = `أنت مساعد صيدلية ذكي ومستشار أنظمة صيدلانية متقدم (Smart Pharmacy Copilot) يعمل داخل نظام إدارة الصيدليات الفعلي (Smart Pharmacy ERP).
 
 قواعد ومبادئ إلزامية:
-1. أنت تعمل داخل نظام صيدلية حقيقي وليست بيئة تجريبية أو خيالية.
+1. أنت تعمل داخل نظام صيدلية حقيقي وليست بيئة تجريبية أو وهمية.
 2. [قاعدة منع اختراع البيانات]: لا تخترع بيانات غير موجودة في قاعدة بيانات الصيدلية (مثل رصيد صنف وهمي، أو أسعار غير مسجلة، أو فواتير وهمية).
    - إذا سألك المستخدم عن رصيد صنف معين أو تفاصيل مالية، اعتمد فقط على البيانات المتوفرة في سياق الصيدلية أدناه.
-   - إذا لم تكن البيانات متوفرة في السياق، اطلب من المستخدم البحث عن الصنف في شاشة المخزون أو استخدام أمر البحث السريع المدمج.
+   - إذا لم تكن البيانات متوفرة في السياق، وضح ذلك صراحة واطلب من الصيدلي مراجعة شاشة المخزون أو الأصناف.
 3. [قاعدة السلامة الدوائية والسريرية]:
    - يمكنك تقديم معلومات دوائية مرجعية مبنية على الأدلة السريرية (دواعي الاستعمال، آلية التأثير، الآثار الجانبية الشائعة، التداخلات الدوائية).
    - لا تخترع تشخيصاً طبياً، أو جرعة غير معتمدة، أو تداخلاً دوائياً بدون سند علمي.
@@ -107,7 +186,8 @@ async function startServer() {
      * الأصناف والمخزون (Inventory): متابعة التشغيلات (Batches)، تواريخ الصلاحية، الجرد المخزني، النواقص، استيراد دليل الأدوية الوطني المعتمد.
      * المشتريات (Purchases): تسجيل فواتير الشراء والتوريد، مردودات المشتريات، متابعة حسابات الموردين.
      * الصناديق والمالية: حركات الصندوق، المصروفات، المقبوضات، إغلاق الوردية، التقارير.
-5. أجب باللغة العربية الفصحى الواضحة والمهنية، وبأسلوب دقيق ومختصر ومباشر.
+5. لا تنفذ أي تعديل مالي أو مخزني بشكل تلقائي مباشر من خلال الدردشة؛ العمليات تتطلب دائماً تأكيد الصيدلي في الواجهة.
+6. أجب باللغة العربية الفصحى الواضحة والمهنية، وبأسلوب دقيق ومختصر ومباشر.
 
 سياق النظام الحالي والبيانات المتاحة:
 ${context ? JSON.stringify(context, null, 2) : 'لا توجد بيانات سياقية إضافية.'}`;
@@ -115,12 +195,22 @@ ${context ? JSON.stringify(context, null, 2) : 'لا توجد بيانات سي�
       // Build conversation contents
       const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
 
-      if (Array.isArray(history)) {
+      if (Array.isArray(history) && history.length > 0) {
         for (const h of history.slice(-8)) {
-          if (h && typeof h.text === 'string') {
+          if (h && typeof h.text === 'string' && h.text.trim()) {
             contents.push({
               role: h.sender === 'user' ? 'user' : 'model',
-              parts: [{ text: h.text }],
+              parts: [{ text: h.text.trim().slice(0, 2000) }],
+            });
+          }
+        }
+      } else if (Array.isArray(messages) && messages.length > 1) {
+        for (const m of messages.slice(0, -1).slice(-8)) {
+          const t = String(m?.text || m?.content || '').trim();
+          if (t) {
+            contents.push({
+              role: m.role === 'assistant' || m.sender === 'assistant' ? 'model' : 'user',
+              parts: [{ text: t.slice(0, 2000) }],
             });
           }
         }
@@ -129,53 +219,95 @@ ${context ? JSON.stringify(context, null, 2) : 'لا توجد بيانات سي�
       // Append current user message
       contents.push({
         role: 'user',
-        parts: [{ text: message.trim() }],
+        parts: [{ text: queryText.slice(0, 4000) }],
       });
 
+      console.log(`[AI Assistant] Processing request, model=${GEMINI_MODEL}`);
+
       const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
+        model: GEMINI_MODEL,
         contents,
         config: {
           systemInstruction: systemPrompt,
-          temperature: 0.3,
-          maxOutputTokens: 1024,
+          temperature: 0.2,
+          maxOutputTokens: 1200,
         },
       });
 
-      const replyText = response.text || 'عذراً، لم أتمكن من استخلاص إجابة واضحة لهذا السؤال.';
-      return res.json({ text: replyText });
+      const replyText = (response.text || '').trim();
+      const latency = Date.now() - startTime;
+
+      if (!replyText) {
+        return res.status(502).json({
+          code: 'AI_INVALID_RESPONSE',
+          error: 'عاد مزود الذكاء الاصطناعي باستجابة فارغة.',
+        });
+      }
+
+      console.log(`[AI Assistant] Response received successfully (${latency}ms)`);
+
+      return res.json({
+        text: replyText,
+        provider: 'google-gemini',
+        model: GEMINI_MODEL,
+        latencyMs: latency,
+      });
     } catch (err: any) {
-      console.error('Assistant Chat API Error:', err);
-      return res.status(500).json({
-        error: err.message || 'حدث خطأ أثناء التواصل مع خادم المساعد الذكي.',
+      const latency = Date.now() - startTime;
+      const classified = classifyError(err);
+      console.error(`[AI Assistant] Error (${classified.code}) after ${latency}ms:`, classified.message);
+      return res.status(classified.httpStatus).json({
+        code: classified.code,
+        error: classified.message,
+        latencyMs: latency,
       });
     }
   });
 
-  // Invoice OCR & Analysis API Endpoint using a vision-capable Gemini model
+  // Invoice OCR & Analysis API Endpoint using a real vision-capable Gemini model
   app.post('/api/gemini/analyze-invoice', async (req, res) => {
+    const startTime = Date.now();
     try {
-      const { image, mimeType, existingProducts, existingSuppliers } = req.body;
-      if (!image || typeof image !== 'string') {
-        return res.status(400).json({ error: 'يرجى إرسال صورة الفاتورة المراد تحليلها.' });
-      }
+      const { image, mimeType, existingProducts, existingSuppliers } = req.body || {};
 
       if (!process.env.GEMINI_API_KEY) {
-        return res.status(503).json({ error: 'تحليل الصور غير متاح حاليًا. لم يتم تفعيل مزود تحليل الصور.' });
+        return res.status(503).json({
+          code: 'IMAGE_ANALYSIS_NOT_CONFIGURED',
+          error: 'تحليل الصور غير متاح حاليًا. لم يتم تفعيل مزود تحليل الصور (GEMINI_API_KEY) في متغيرات بيئة الخادم.',
+        });
+      }
+
+      if (!image || typeof image !== 'string') {
+        return res.status(400).json({
+          code: 'AI_INVALID_IMAGE',
+          error: 'يرجى إرسال صورة الفاتورة المراد تحليلها.',
+        });
       }
 
       // Extract raw base64 data and mime type
       const dataUrlMatch = image.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,(.+)$/);
       if (!dataUrlMatch) {
-        return res.status(400).json({ error: 'الصورة غير مدعومة. أرسل صورة JPG أو PNG أو WEBP.' });
+        return res.status(400).json({
+          code: 'AI_INVALID_IMAGE_FORMAT',
+          error: 'الصورة غير مدعومة أو تالفة. يرجى إرسال صورة بتنسيق JPG أو PNG أو WEBP صالحة.',
+        });
       }
+      const detectedMime = dataUrlMatch[1];
       const base64Data = dataUrlMatch[2];
-      let detectedMime = mimeType || 'image/jpeg';
-      if (!/^image\/(jpeg|png|webp|gif)$/.test(detectedMime)) detectedMime = dataUrlMatch[1];
+
+      // Approximate byte size check (max 15MB)
+      const approxBytes = (base64Data.length * 3) / 4;
+      if (approxBytes > 15 * 1024 * 1024) {
+        return res.status(413).json({
+          code: 'AI_IMAGE_OVERSIZED',
+          error: 'حجم الصورة كبير جداً. الحد الأقصى المسموح به هو 15 ميجابايت.',
+        });
+      }
 
       const ai = getAI();
-      const prompt = `أنت خبير صيدلاني وأنظمة إدارة الصيدليات (Pharmacy ERP).
-قم بتحليل صورة فاتورة مشتريات وتوريد الأدوية المرفقة واستخرج البيانات الصيدلانية والمالية بدقة عالية بتنسيق JSON حصراً:
+      const prompt = `أنت خبير صيدلاني وأنظمة إدارة الصيدليات (Smart Pharmacy ERP).
+قم بتحليل صورة فاتورة مشتريات وتوريد الأدوية المرفقة بدقة سريرية ومحاسبية عالية.
+استخرج البيانات الصيدلانية والمالية بتنسيق JSON حصراً:
 
 المعلومات المطلوبة:
 1. "supplier_name": اسم شركة الأدوية أو المورد المذكور في رأس الفاتورة.
@@ -187,11 +319,11 @@ ${context ? JSON.stringify(context, null, 2) : 'لا توجد بيانات سي�
    - "raw_name": اسم الصنف كما هو مكتوب في الفاتورة تماماً.
    - "product_name_ar": اسم الصنف باللغة العربية بدقة صيدلانية.
    - "product_name_en": اسم الصنف باللغة الإنجليزية العلمي أو التجاري.
-   - "batch_number": رقم التشغيلة/الدفعة (Batch / Lot No). إذا لم يوجد اقترح رمزا مناسبا مثل BN-12345.
-   - "expiry_date": تاريخ انتهاء الصلاحية بصيغة YYYY-MM-DD (مثال: 2027-05-31).
+   - "batch_number": رقم التشغيلة/الدفعة (Batch / Lot No).
+   - "expiry_date": تاريخ انتهاء الصلاحية بصيغة YYYY-MM-DD.
    - "quantity": الكمية الموردة كعدد صحيح موجب.
    - "unit_name": اسم الوحدة الموردة (مثل "باكت", "علبة", "شريط", "أمبولة", "قارورة").
-   - "unit_purchase_price": سعر شراء الوحدة أو التكلفة كرقم عادي (مثال 2500 أو 120.5).
+   - "unit_purchase_price": سعر شراء الوحدة أو التكلفة كرقم عادي.
    - "unit_selling_price": سعر بيع الوحدة للجمهور المقترح أو المسجل كرقم عادي.
    - "discount_amount": مبلغ الخصم إن وجد.
 
@@ -201,13 +333,15 @@ ${JSON.stringify((existingSuppliers || []).slice(0, 25))}
 قائمة الأدوية المسجلة حالياً للمطابقة إن أمكن:
 ${JSON.stringify((existingProducts || []).slice(0, 60).map((p: any) => ({ id: p.id, name_ar: p.name_ar, name_en: p.name_en })))}
 
-إذا كان الصنف يطابق أحد أصناف الصيدلية المذكورة، أضف حقل "matched_product_id" بمعرف الصنف.
-إذا كان المورد يطابق أحد موردي الصيدلية، أضف حقل "matched_supplier_id" بمعرف المورد.
+إذا تطابق الصنف مع صنف مسجل، أضف حقل "matched_product_id".
+إذا تطابق المورد مع مورد مسجل، أضف حقل "matched_supplier_id".
 
 أرجع فقط كائن JSON صحيح وبدون أي نصوص إضافية أو كتل Markdown.`;
 
+      console.log(`[Invoice Vision AI] Analyzing invoice image, mime=${detectedMime}`);
+
       const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
+        model: GEMINI_MODEL,
         contents: {
           parts: [
             {
@@ -227,15 +361,30 @@ ${JSON.stringify((existingProducts || []).slice(0, 60).map((p: any) => ({ id: p.
         },
       });
 
-      const rawText = response.text || '{}';
+      const latency = Date.now() - startTime;
+      const rawText = (response.text || '{}').trim();
       const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleanJson);
 
+      let parsed: any;
+      try {
+        parsed = JSON.parse(cleanJson);
+      } catch (jsonErr) {
+        return res.status(502).json({
+          code: 'AI_RESPONSE_VALIDATION_FAILED',
+          error: 'تعذر التحقق من هيكل البيانات المستخرجة من الفاتورة.',
+        });
+      }
+
+      console.log(`[Invoice Vision AI] Analysis completed successfully (${latency}ms)`);
       return res.json(parsed);
     } catch (err: any) {
-      console.error('Invoice Analysis Error:', err);
-      return res.status(500).json({
-        error: err.message || 'حدث خطأ أثناء معالجة صورة الفاتورة بالذكاء الاصطناعي.',
+      const latency = Date.now() - startTime;
+      const classified = classifyError(err);
+      console.error(`[Invoice Vision AI] Error (${classified.code}) after ${latency}ms:`, classified.message);
+      return res.status(classified.httpStatus).json({
+        code: classified.code,
+        error: classified.message,
+        latencyMs: latency,
       });
     }
   });

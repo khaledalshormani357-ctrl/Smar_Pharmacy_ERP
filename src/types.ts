@@ -18,7 +18,7 @@ export interface PharmacyProfile {
   license_number?: string;
   logo_data_url?: string;
   default_profit_margin_bps: number; // e.g. 2000 = 20.00%
-  receipt_paper_size: '80mm' | 'A4';
+  receipt_paper_size: '80mm' | 'A4' | '58mm';
   receipt_footer_text?: string;
   tax_rate_bps?: number; // e.g. 500 = 5.00%, 0 = exempt/disabled (configurable VAT)
   near_expiry_days?: number; // Configurable expiry alert threshold in days (e.g. 30, 60, 90)
@@ -58,6 +58,7 @@ export interface Category {
 export interface Manufacturer {
   id: ID;
   name_ar: string;
+  name_en?: string;
   country?: string;
 }
 
@@ -312,6 +313,7 @@ export interface SaleItem {
   item_cogs: number;  // historical cost sum from allocations
   item_gross_profit: number;
   returned_quantity?: number; // for sales returns tracking provenance
+  product_name_snapshot?: string;
 }
 
 export interface SaleItemAllocation {

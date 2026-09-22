@@ -87,6 +87,8 @@ export class SQLiteEngine {
     this.state = this.loadInitialState();
   }
 
+  private saveTimer: any = null;
+
   public getState(): DatabaseState {
     return this.state;
   }
@@ -101,14 +103,46 @@ export class SQLiteEngine {
     this.saveState();
   }
 
-  public saveState() {
+  /**
+   * Fast, low-latency deep-clone snapshot without JSON.stringify overhead.
+   * Preserves exact row states for instant rollback on error.
+   */
+  private createSnapshot(): DatabaseState {
+    const snapshot: any = {};
+    for (const key of Object.keys(this.state) as Array<keyof DatabaseState>) {
+      const val = this.state[key];
+      if (Array.isArray(val)) {
+        snapshot[key] = val.map((row) => (row && typeof row === 'object' ? { ...row } : row));
+      } else if (val && typeof val === 'object') {
+        snapshot[key] = { ...val };
+      } else {
+        snapshot[key] = val;
+      }
+    }
+    return snapshot;
+  }
+
+  public saveStateImmediate() {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
     try {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
       }
     } catch (err) {
-      console.error('Failed to persist SQLite state to storage', err);
+      console.warn('Failed to persist SQLite state to localStorage (likely quota limit on large catalog)', err);
     }
+  }
+
+  public saveState() {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+    }
+    this.saveTimer = setTimeout(() => {
+      this.saveStateImmediate();
+    }, 250);
   }
 
   public exportJSON(): string {
@@ -133,7 +167,7 @@ export class SQLiteEngine {
 
   // Atomic transaction runner with PRAGMA foreign_keys = ON and automatic rollback on error
   public transaction<T>(callback: () => T): T {
-    const backup = JSON.parse(JSON.stringify(this.state));
+    const backup = this.createSnapshot();
     try {
       const result = callback();
       // Enforce PRAGMA foreign_keys = ON check on state
@@ -150,7 +184,7 @@ export class SQLiteEngine {
   }
 
   public async transactionAsync<T>(callback: () => Promise<T>): Promise<T> {
-    const backup = JSON.parse(JSON.stringify(this.state));
+    const backup = this.createSnapshot();
     try {
       const result = await callback();
       TransactionManager.verifyForeignKeys(this.state);

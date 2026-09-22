@@ -19,16 +19,21 @@ import { MetricCard } from '../ui/MetricCard';
 import { Money } from '../../utils/money';
 
 interface DashboardViewProps {
-  onNavigateToPOS: () => void;
-  onNavigateToInventory: () => void;
-  onNavigateToPurchases: () => void;
+  onNavigateToPOS?: () => void;
+  onNavigateToInventory?: () => void;
+  onNavigateToPurchases?: () => void;
+  onNavigate?: (tab: any) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateToPOS,
   onNavigateToInventory,
-  onNavigateToPurchases
+  onNavigateToPurchases,
+  onNavigate
 }) => {
+  const handlePOS = onNavigateToPOS || (() => onNavigate?.('pos'));
+  const handleInventory = onNavigateToInventory || (() => onNavigate?.('inventory'));
+  const handlePurchases = onNavigateToPurchases || (() => onNavigate?.('purchases'));
   const [data, setData] = useState(computeMetrics());
 
   useEffect(() => {
@@ -109,7 +114,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <button
             id="btn-dash-new-sale"
-            onClick={onNavigateToPOS}
+            onClick={handlePOS}
             className="px-4 py-3 bg-white text-blue-700 hover:bg-blue-50 active:scale-95 font-bold text-xs rounded-2xl shadow-md transition-all flex items-center gap-1.5"
           >
             <span>فاتورة جديدة</span>
@@ -165,7 +170,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span>سلامة المخزون والتنبيهات الدوائية</span>
           </h3>
           <button
-            onClick={onNavigateToInventory}
+            onClick={handleInventory}
             className="text-xs text-blue-600 font-semibold hover:underline"
           >
             عرض الكل ({data.totalProductsCount})
@@ -174,7 +179,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         <div className="grid grid-cols-3 gap-2 text-center">
           <div
-            onClick={onNavigateToInventory}
+            onClick={handleInventory}
             className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl cursor-pointer hover:bg-amber-100/60 transition-colors"
           >
             <div className="text-lg font-bold font-mono text-amber-700">{data.lowStockCount}</div>
@@ -182,7 +187,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div
-            onClick={onNavigateToInventory}
+            onClick={handleInventory}
             className="p-3 bg-orange-50/60 border border-orange-200 rounded-xl cursor-pointer hover:bg-orange-100/60 transition-colors"
           >
             <div className="text-lg font-bold font-mono text-orange-700">{data.expiringSoonCount}</div>
@@ -190,7 +195,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div
-            onClick={onNavigateToInventory}
+            onClick={handleInventory}
             className="p-3 bg-rose-50/60 border border-rose-200 rounded-xl cursor-pointer hover:bg-rose-100/60 transition-colors"
           >
             <div className="text-lg font-bold font-mono text-rose-700">{data.expiredCount}</div>

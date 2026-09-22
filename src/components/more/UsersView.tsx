@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { db } from '../../db/sqlite';
 import { PasswordSecurity } from '../../utils/security';
-import { User, Role } from '../../types';
+import { User, Role, RoleId } from '../../types';
 
 export const UsersView: React.FC = () => {
   const [users, setUsers] = useState<User[]>(db.getState().users || []);
@@ -30,7 +30,7 @@ export const UsersView: React.FC = () => {
   // Form State
   const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
-  const [roleId, setRoleId] = useState('pharmacist');
+  const [roleId, setRoleId] = useState<RoleId>('pharmacist');
   const [pinCode, setPinCode] = useState('');
   const [password, setPassword] = useState('');
   const [biometricEnabled, setBiometricEnabled] = useState(false);
@@ -346,7 +346,7 @@ export const UsersView: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-700 mb-1">الدور والصلاحية *</label>
                   <select
                     value={roleId}
-                    onChange={(e) => setRoleId(e.target.value)}
+                    onChange={(e) => setRoleId(e.target.value as RoleId)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white focus:outline-hidden focus:border-blue-500"
                   >
                     <option value="pharmacist">صيدلي (مبيعات + مخزون + فواتير)</option>

@@ -634,7 +634,17 @@ export const QuickServicesView: React.FC<QuickServicesViewProps> = ({ currentUse
       {showReportsModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-5 max-w-5xl w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto border border-slate-100 animate-in fade-in zoom-in-95">
-            <ReportsView onBack={() => setShowReportsModal(false)} />
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800 text-sm">التقارير والمؤشرات</h3>
+              <button
+                type="button"
+                onClick={() => setShowReportsModal(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+            <ReportsView />
           </div>
         </div>
       )}
@@ -643,7 +653,17 @@ export const QuickServicesView: React.FC<QuickServicesViewProps> = ({ currentUse
       {showInvoicesArchiveModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-5 max-w-4xl w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto border border-slate-100 animate-in fade-in zoom-in-95">
-            <InvoicesArchiveView onBack={() => setShowInvoicesArchiveModal(false)} />
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800 text-sm">أرشيف الفواتير</h3>
+              <button
+                type="button"
+                onClick={() => setShowInvoicesArchiveModal(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+            <InvoicesArchiveView />
           </div>
         </div>
       )}
@@ -652,7 +672,17 @@ export const QuickServicesView: React.FC<QuickServicesViewProps> = ({ currentUse
       {showUsersModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-5 max-w-4xl w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto border border-slate-100 animate-in fade-in zoom-in-95">
-            <UsersView onBack={() => setShowUsersModal(false)} />
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800 text-sm">إدارة المستخدمين والصلاحيات</h3>
+              <button
+                type="button"
+                onClick={() => setShowUsersModal(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+            <UsersView />
           </div>
         </div>
       )}
