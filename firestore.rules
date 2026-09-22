@@ -1,0 +1,528 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- GLOBAL SAFETY NET (DEFAULT-DENY) ---
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HELPER FUNCTIONS ---
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.token.firebase.sign_in_provider == 'anonymous');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // --- MULTI-TENANT PHARMACY MEMBERSHIP HELPERS ---
+    function isPharmacyMember(pharmacyId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/pharmacies/$(pharmacyId)/members/$(request.auth.uid));
+    }
+
+    function getPharmacyMember(pharmacyId) {
+      return get(/databases/$(database)/documents/pharmacies/$(pharmacyId)/members/$(request.auth.uid)).data;
+    }
+
+    function isPharmacyAdmin(pharmacyId) {
+      return isAdmin() || (isPharmacyMember(pharmacyId) && getPharmacyMember(pharmacyId).role in ['admin', 'super_admin']);
+    }
+
+    function isPharmacyPharmacist(pharmacyId) {
+      return isAdmin() || (isPharmacyMember(pharmacyId) && getPharmacyMember(pharmacyId).role in ['admin', 'pharmacist', 'super_admin']);
+    }
+
+    function isPharmacyCashier(pharmacyId) {
+      return isAdmin() || (isPharmacyMember(pharmacyId) && getPharmacyMember(pharmacyId).role in ['admin', 'pharmacist', 'cashier', 'super_admin']);
+    }
+
+    // --- ENTITY VALIDATION BLUEPRINTS ---
+
+    function isValidAdmin(data) {
+      return data.keys().hasAll(['userId', 'role']) &&
+             data.keys().hasOnly(['userId', 'role', 'createdAt']) &&
+             data.userId is string && isValidId(data.userId) &&
+             data.role in ['super_admin', 'admin'] &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'username', 'fullName', 'role', 'isActive']) &&
+             data.keys().hasOnly(['id', 'username', 'fullName', 'role', 'isActive', 'createdAt', 'updatedAt']) &&
+             data.id is string && isValidId(data.id) &&
+             data.username is string && data.username.size() >= 2 && data.username.size() <= 64 &&
+             data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 128 &&
+             data.role in ['admin', 'pharmacist', 'cashier'] &&
+             data.isActive is bool &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidPharmacyProfile(data) {
+      return data.keys().hasAll(['id', 'nameAr', 'currency']) &&
+             data.keys().hasOnly(['id', 'nameAr', 'nameEn', 'licenseNumber', 'taxNumber', 'phone', 'address', 'currency', 'updatedAt']) &&
+             data.id is string && isValidId(data.id) &&
+             data.nameAr is string && data.nameAr.size() >= 2 && data.nameAr.size() <= 128 &&
+             data.currency is string && data.currency.size() >= 1 && data.currency.size() <= 16 &&
+             (!('nameEn' in data) || (data.nameEn is string && data.nameEn.size() <= 128)) &&
+             (!('licenseNumber' in data) || (data.licenseNumber is string && data.licenseNumber.size() <= 64)) &&
+             (!('taxNumber' in data) || (data.taxNumber is string && data.taxNumber.size() <= 64)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 32)) &&
+             (!('address' in data) || (data.address is string && data.address.size() <= 256)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['id', 'nameAr', 'sellingPrice', 'isActive']) &&
+             data.keys().hasOnly(['id', 'nameAr', 'nameEn', 'scientificName', 'barcode', 'categoryId', 'manufacturerId', 'sellingPrice', 'purchasePrice', 'currentStock', 'isActive', 'createdAt', 'updatedAt']) &&
+             data.id is string && isValidId(data.id) &&
+             data.nameAr is string && data.nameAr.size() >= 1 && data.nameAr.size() <= 256 &&
+             data.sellingPrice is number && data.sellingPrice >= 0 &&
+             data.isActive is bool &&
+             (!('nameEn' in data) || (data.nameEn is string && data.nameEn.size() <= 256)) &&
+             (!('scientificName' in data) || (data.scientificName is string && data.scientificName.size() <= 256)) &&
+             (!('barcode' in data) || (data.barcode is string && data.barcode.size() <= 64)) &&
+             (!('categoryId' in data) || (data.categoryId is string && data.categoryId.size() <= 64)) &&
+             (!('manufacturerId' in data) || (data.manufacturerId is string && data.manufacturerId.size() <= 64)) &&
+             (!('purchasePrice' in data) || (data.purchasePrice is number && data.purchasePrice >= 0)) &&
+             (!('currentStock' in data) || (data.currentStock is number)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidProductBatch(data, parentProductId) {
+      return data.keys().hasAll(['id', 'productId', 'batchNumber', 'expiryDate', 'quantity', 'purchaseUnitCost']) &&
+             data.keys().hasOnly(['id', 'productId', 'batchNumber', 'expiryDate', 'quantity', 'purchaseUnitCost', 'isDepleted', 'createdAt']) &&
+             data.id is string && isValidId(data.id) &&
+             data.productId == parentProductId &&
+             data.batchNumber is string && data.batchNumber.size() >= 1 && data.batchNumber.size() <= 64 &&
+             data.expiryDate is string && data.expiryDate.size() >= 4 && data.expiryDate.size() <= 32 &&
+             data.quantity is number &&
+             data.purchaseUnitCost is number && data.purchaseUnitCost >= 0 &&
+             (!('isDepleted' in data) || data.isDepleted is bool) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
+    }
+
+    function isValidSale(data) {
+      return data.keys().hasAll(['id', 'invoiceNumber', 'cashierId', 'netTotal', 'paidAmount', 'status']) &&
+             data.keys().hasOnly(['id', 'invoiceNumber', 'cashierId', 'customerId', 'shiftId', 'paymentMethod', 'grossTotal', 'discountTotal', 'netTotal', 'paidAmount', 'remainingAmount', 'status', 'createdAt']) &&
+             data.id is string && isValidId(data.id) &&
+             data.invoiceNumber is string && data.invoiceNumber.size() >= 1 && data.invoiceNumber.size() <= 64 &&
+             data.cashierId is string && isValidId(data.cashierId) &&
+             data.netTotal is number && data.netTotal >= 0 &&
+             data.paidAmount is number && data.paidAmount >= 0 &&
+             data.status in ['completed', 'refunded', 'cancelled'] &&
+             (!('customerId' in data) || (data.customerId is string && isValidId(data.customerId))) &&
+             (!('shiftId' in data) || (data.shiftId is string && isValidId(data.shiftId))) &&
+             (!('paymentMethod' in data) || (data.paymentMethod in ['cash', 'card', 'credit'])) &&
+             (!('grossTotal' in data) || (data.grossTotal is number && data.grossTotal >= 0)) &&
+             (!('discountTotal' in data) || (data.discountTotal is number && data.discountTotal >= 0)) &&
+             (!('remainingAmount' in data) || (data.remainingAmount is number)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
+    }
+
+    function isValidSaleItem(data, parentSaleId) {
+      return data.keys().hasAll(['id', 'saleId', 'productId', 'quantity', 'unitPrice', 'totalPrice']) &&
+             data.keys().hasOnly(['id', 'saleId', 'productId', 'batchId', 'quantity', 'unitPrice', 'totalPrice']) &&
+             data.id is string && isValidId(data.id) &&
+             data.saleId == parentSaleId &&
+             data.productId is string && isValidId(data.productId) &&
+             data.quantity is number && data.quantity > 0 &&
+             data.unitPrice is number && data.unitPrice >= 0 &&
+             data.totalPrice is number && data.totalPrice >= 0 &&
+             (!('batchId' in data) || (data.batchId is string && isValidId(data.batchId)));
+    }
+
+    function isValidPurchase(data) {
+      return data.keys().hasAll(['id', 'billNumber', 'supplierId', 'totalAmount', 'status']) &&
+             data.keys().hasOnly(['id', 'billNumber', 'supplierId', 'totalAmount', 'paidAmount', 'remainingAmount', 'paymentType', 'status', 'createdAt']) &&
+             data.id is string && isValidId(data.id) &&
+             data.billNumber is string && data.billNumber.size() >= 1 && data.billNumber.size() <= 64 &&
+             data.supplierId is string && isValidId(data.supplierId) &&
+             data.totalAmount is number && data.totalAmount >= 0 &&
+             data.status in ['completed', 'draft', 'cancelled'] &&
+             (!('paidAmount' in data) || (data.paidAmount is number && data.paidAmount >= 0)) &&
+             (!('remainingAmount' in data) || (data.remainingAmount is number)) &&
+             (!('paymentType' in data) || (data.paymentType in ['cash', 'credit'])) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
+    }
+
+    function isValidSupplier(data) {
+      return data.keys().hasAll(['id', 'name', 'isActive']) &&
+             data.keys().hasOnly(['id', 'name', 'phone', 'address', 'balance', 'creditLimit', 'isActive']) &&
+             data.id is string && isValidId(data.id) &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 128 &&
+             data.isActive is bool &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 32)) &&
+             (!('address' in data) || (data.address is string && data.address.size() <= 256)) &&
+             (!('balance' in data) || (data.balance is number)) &&
+             (!('creditLimit' in data) || (data.creditLimit is number && data.creditLimit >= 0));
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['id', 'name', 'isActive']) &&
+             data.keys().hasOnly(['id', 'name', 'phone', 'balance', 'creditLimit', 'isActive']) &&
+             data.id is string && isValidId(data.id) &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 128 &&
+             data.isActive is bool &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 32)) &&
+             (!('balance' in data) || (data.balance is number)) &&
+             (!('creditLimit' in data) || (data.creditLimit is number && data.creditLimit >= 0));
+    }
+
+    function isValidCashTransaction(data) {
+      return data.keys().hasAll(['id', 'cashboxId', 'type', 'direction', 'amount', 'balanceAfter', 'userId']) &&
+             data.keys().hasOnly(['id', 'cashboxId', 'type', 'direction', 'amount', 'balanceAfter', 'description', 'userId', 'createdAt']) &&
+             data.id is string && isValidId(data.id) &&
+             data.cashboxId is string && isValidId(data.cashboxId) &&
+             data.type in ['sale', 'refund', 'expense', 'capital_deposit', 'shift_closing'] &&
+             data.direction in ['in', 'out'] &&
+             data.amount is number && data.amount > 0 &&
+             data.balanceAfter is number &&
+             data.userId is string && isValidId(data.userId) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 256)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
+    }
+
+    function isValidShift(data) {
+      return data.keys().hasAll(['id', 'cashierId', 'cashboxId', 'openingBalance', 'status', 'startTime']) &&
+             data.keys().hasOnly(['id', 'cashierId', 'cashboxId', 'openingBalance', 'closingBalance', 'status', 'startTime', 'endTime']) &&
+             data.id is string && isValidId(data.id) &&
+             data.cashierId is string && isValidId(data.cashierId) &&
+             data.cashboxId is string && isValidId(data.cashboxId) &&
+             data.openingBalance is number && data.openingBalance >= 0 &&
+             data.status in ['open', 'closed'] &&
+             data.startTime is string && data.startTime.size() <= 64 &&
+             (!('closingBalance' in data) || (data.closingBalance is number)) &&
+             (!('endTime' in data) || (data.endTime is string && data.endTime.size() <= 64));
+    }
+
+    function isValidPharmacyMember(data, pharmacyId) {
+      return data.keys().hasAll(['userId', 'pharmacyId', 'role', 'isActive']) &&
+             data.userId is string && isValidId(data.userId) &&
+             data.pharmacyId == pharmacyId &&
+             data.role in ['admin', 'pharmacist', 'cashier', 'storekeeper'] &&
+             data.isActive is bool;
+    }
+
+    function isValidStockMovement(data) {
+      return data.keys().hasAll(['id', 'productId', 'type', 'quantity', 'balanceAfter', 'referenceId', 'userId']) &&
+             data.id is string && isValidId(data.id) &&
+             data.productId is string && isValidId(data.productId) &&
+             data.type in ['sale', 'purchase', 'sale_return', 'purchase_return', 'adjustment', 'stocktake'] &&
+             data.quantity is number &&
+             data.balanceAfter is number &&
+             data.referenceId is string &&
+             data.userId is string;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['id', 'userId', 'action', 'entity', 'entityId']) &&
+             data.id is string && isValidId(data.id) &&
+             data.userId is string &&
+             data.action is string &&
+             data.entity is string &&
+             data.entityId is string;
+    }
+
+    function isValidSyncOutbox(data, pharmacyId) {
+      return data.keys().hasAll(['id', 'operationId', 'pharmacyId', 'entityType', 'entityId', 'action', 'status']) &&
+             data.id is string && isValidId(data.id) &&
+             data.operationId is string &&
+             data.pharmacyId == pharmacyId &&
+             data.action in ['create', 'update', 'delete'] &&
+             data.status in ['pending', 'processing', 'synced', 'failed', 'retry'];
+    }
+
+    // --- COLLECTION MATCH RULES ---
+
+    // 1. Admins Collection (Only readable by admins, never writable by client)
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && isAdmin();
+      allow list: if isAdmin();
+      allow write: if false; // Provisioned through backend service only
+    }
+
+    // 2. Users Collection
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isSignedIn() && (request.auth.uid == userId || isAdmin()));
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isAdmin() && isValidUser(incoming());
+      allow update: if isValidId(userId) && isAdmin() && isValidUser(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'role', 'isActive', 'updatedAt']);
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // 3. Pharmacy Profiles
+    match /pharmacy_profiles/{profileId} {
+      allow get: if isValidId(profileId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(profileId) && isAdmin() && isValidPharmacyProfile(incoming());
+      allow update: if isValidId(profileId) && isAdmin() && isValidPharmacyProfile(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['nameAr', 'nameEn', 'licenseNumber', 'taxNumber', 'phone', 'address', 'currency', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // 4. Products Catalog
+    match /products/{productId} {
+      allow get: if isValidId(productId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(productId) && isVerifiedUser() && isValidProduct(incoming());
+      allow update: if isValidId(productId) && isVerifiedUser() && isValidProduct(incoming()) && (
+        isAdmin() ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['sellingPrice', 'purchasePrice', 'currentStock', 'isActive', 'updatedAt'])
+      );
+      allow delete: if isValidId(productId) && isAdmin();
+
+      // Subcollection: Batches (Master Gate Relational Sync)
+      match /batches/{batchId} {
+        allow get: if isValidId(batchId) && isSignedIn();
+        allow list: if isSignedIn();
+        allow create: if isValidId(batchId) && isVerifiedUser() &&
+                         exists(/databases/$(database)/documents/products/$(productId)) &&
+                         isValidProductBatch(incoming(), productId);
+        allow update: if isValidId(batchId) && isVerifiedUser() &&
+                         exists(/databases/$(database)/documents/products/$(productId)) &&
+                         isValidProductBatch(incoming(), productId) && (
+                           isAdmin() ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['quantity', 'isDepleted'])
+                         );
+        allow delete: if isValidId(batchId) && isAdmin();
+      }
+    }
+
+    // 5. Sales & Invoices
+    match /sales/{saleId} {
+      allow get: if isValidId(saleId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(saleId) && isVerifiedUser() && isValidSale(incoming()) &&
+                       incoming().cashierId == request.auth.uid;
+      // Terminal State Locking: No amount tampering once completed/refunded
+      allow update: if isValidId(saleId) && isVerifiedUser() && isValidSale(incoming()) && (
+        isAdmin() ||
+        (existing().status == 'draft' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'netTotal', 'paidAmount', 'remainingAmount']))
+      );
+      allow delete: if isValidId(saleId) && isAdmin();
+
+      // Subcollection: Sale Items
+      match /items/{itemId} {
+        allow get: if isValidId(itemId) && isSignedIn();
+        allow list: if isSignedIn();
+        allow create: if isValidId(itemId) && isVerifiedUser() &&
+                         exists(/databases/$(database)/documents/sales/$(saleId)) &&
+                         isValidSaleItem(incoming(), saleId);
+        allow update: if false; // Immutable line items
+        allow delete: if isValidId(itemId) && isAdmin();
+      }
+    }
+
+    // 6. Purchases
+    match /purchases/{purchaseId} {
+      allow get: if isValidId(purchaseId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(purchaseId) && isVerifiedUser() && isValidPurchase(incoming());
+      allow update: if isValidId(purchaseId) && isVerifiedUser() && isValidPurchase(incoming()) && (
+        isAdmin() ||
+        (existing().status == 'draft' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidAmount', 'remainingAmount']))
+      );
+      allow delete: if isValidId(purchaseId) && isAdmin();
+    }
+
+    // 7. Suppliers
+    match /suppliers/{supplierId} {
+      allow get: if isValidId(supplierId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(supplierId) && isVerifiedUser() && isValidSupplier(incoming());
+      allow update: if isValidId(supplierId) && isVerifiedUser() && isValidSupplier(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'address', 'balance', 'creditLimit', 'isActive']);
+      allow delete: if isValidId(supplierId) && isAdmin();
+    }
+
+    // 8. Customers
+    match /customers/{customerId} {
+      allow get: if isValidId(customerId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(customerId) && isVerifiedUser() && isValidCustomer(incoming());
+      allow update: if isValidId(customerId) && isVerifiedUser() && isValidCustomer(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'balance', 'creditLimit', 'isActive']);
+      allow delete: if isValidId(customerId) && isAdmin();
+    }
+
+    // 9. Cash Transactions (Append-Only Audit Log)
+    match /cash_transactions/{transactionId} {
+      allow get: if isValidId(transactionId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(transactionId) && isVerifiedUser() && isValidCashTransaction(incoming()) &&
+                       incoming().userId == request.auth.uid;
+      allow update: if false; // Append-only audit record
+      allow delete: if false; // Immutable journal
+    }
+
+    // 10. Shifts
+    match /shifts/{shiftId} {
+      allow get: if isValidId(shiftId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(shiftId) && isVerifiedUser() && isValidShift(incoming()) &&
+                       incoming().cashierId == request.auth.uid;
+      allow update: if isValidId(shiftId) && isVerifiedUser() && isValidShift(incoming()) && (
+        isAdmin() ||
+        (existing().cashierId == request.auth.uid &&
+         existing().status == 'open' &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['closingBalance', 'status', 'endTime']))
+      );
+      allow delete: if isValidId(shiftId) && isAdmin();
+    }
+
+    // =========================================================================
+    // 11. MULTI-TENANT ISOLATED PHARMACY SCOPE (/pharmacies/{pharmacyId}/...)
+    // =========================================================================
+    match /pharmacies/{pharmacyId} {
+      // The pharmacy root document itself (Profile)
+      allow get: if isValidId(pharmacyId) && isPharmacyMember(pharmacyId);
+      allow list: if isAdmin();
+      allow create: if isValidId(pharmacyId) && isAdmin();
+      allow update: if isValidId(pharmacyId) && isPharmacyAdmin(pharmacyId);
+      allow delete: if false;
+
+      // 11.1 Members (Staff access control per pharmacy)
+      match /members/{memberId} {
+        allow get: if isValidId(memberId) && isPharmacyMember(pharmacyId);
+        allow list: if isPharmacyMember(pharmacyId);
+        allow create: if isValidId(memberId) && isPharmacyAdmin(pharmacyId) && isValidPharmacyMember(incoming(), pharmacyId);
+        allow update: if isValidId(memberId) && isPharmacyAdmin(pharmacyId) && isValidPharmacyMember(incoming(), pharmacyId);
+        allow delete: if isValidId(memberId) && isPharmacyAdmin(pharmacyId);
+      }
+
+      // 11.2 Products Catalog (Tenant Isolated)
+      match /products/{productId} {
+        allow get: if isValidId(productId) && isPharmacyMember(pharmacyId);
+        allow list: if isPharmacyMember(pharmacyId);
+        allow create: if isValidId(productId) && isPharmacyMember(pharmacyId) && isValidProduct(incoming());
+        allow update: if isValidId(productId) && isPharmacyMember(pharmacyId) && isValidProduct(incoming()) && (
+          isPharmacyAdmin(pharmacyId) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['sellingPrice', 'purchasePrice', 'currentStock', 'isActive', 'updatedAt'])
+        );
+        allow delete: if isValidId(productId) && isPharmacyAdmin(pharmacyId);
+
+        // FEFO Batches
+        match /batches/{batchId} {
+          allow get: if isValidId(batchId) && isPharmacyMember(pharmacyId);
+          allow list: if isPharmacyMember(pharmacyId);
+          allow create: if isValidId(batchId) && isPharmacyMember(pharmacyId) && isValidProductBatch(incoming(), productId);
+          allow update: if isValidId(batchId) && isPharmacyMember(pharmacyId) && isValidProductBatch(incoming(), productId) && (
+            isPharmacyAdmin(pharmacyId) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['quantity', 'isDepleted'])
+          );
+          allow delete: if isValidId(batchId) && isPharmacyAdmin(pharmacyId);
+        }
+      }
+
+      // 11.3 Sales & Invoices (Tenant Isolated & Financially Immutable)
+      match /sales/{saleId} {
+        allow get: if isValidId(saleId) && isPharmacyMember(pharmacyId);
+        allow list: if isPharmacyMember(pharmacyId);
+        allow create: if isValidId(saleId) && isPharmacyCashier(pharmacyId) && isValidSale(incoming()) &&
+                         incoming().cashierId == request.auth.uid;
+        // Financial Immutability: Once posted/completed, NO modifications to amounts or line items are permitted
+        allow update: if isValidId(saleId) && isPharmacyMember(pharmacyId) && isValidSale(incoming()) && (
+          isPharmacyAdmin(pharmacyId) ||
+          (existing().status == 'draft' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'netTotal', 'paidAmount', 'remainingAmount']))
+        );
+        allow delete: if false; // Financial records are NEVER deleted
+
+        // Line Items
+        match /items/{itemId} {
+          allow get: if isValidId(itemId) && isPharmacyMember(pharmacyId);
+          allow list: if isPharmacyMember(pharmacyId);
+          allow create: if isValidId(itemId) && isPharmacyCashier(pharmacyId) && isValidSaleItem(incoming(), saleId);
+          allow update: if false; // Line items are strictly immutable
+          allow delete: if false;
+        }
+      }
+
+      // 11.4 Purchases (Tenant Isolated)
+      match /purchases/{purchaseId} {
+        allow get: if isValidId(purchaseId) && isPharmacyMember(pharmacyId);
+        allow list: if isPharmacyMember(pharmacyId);
+        allow create: if isValidId(purchaseId) && isPharmacyPharmacist(pharmacyId) && isValidPurchase(incoming());
+        allow update: if isValidId(purchaseId) && isPharmacyMember(pharmacyId) && isValidPurchase(incoming()) && (
+          isPharmacyAdmin(pharmacyId) ||
+          (existing().status == 'draft' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidAmount', 'remainingAmount']))
+        );
+        allow delete: if false;
+      }
+
+      // 11.5 Suppliers (Tenant Isolated)
+      match /suppliers/{supplierId} {
+        allow get: if isValidId(supplierId) && isPharmacyMember(pharmacyId);
+        allow list: if isPharmacyMember(pharmacyId);
+        allow create: if isValidId(supplierId) && isPharmacyMember(pharmacyId) && isValidSupplier(incoming());
+        allow update: if isValidId(supplierId) && isPharmacyMember(pharmacyId) && isValidSupplier(incoming());
+        allow delete: if isValidId(supplierId) && isPharmacyAdmin(pharmacyId);
+      }
+
+      // 11.6 Customers (Tenant Isolated)
+      match /customers/{customerId} {
+        allow get: if isValidId(customerId) && isPharmacyMember(pharmacyId);
+        allow list: if isPharmacyMember(pharmacyId);
+        allow create: if isValidId(customerId) && isPharmacyMember(pharmacyId) && isValidCustomer(incoming());
+        allow update: if isValidId(customerId) && isPharmacyMember(pharmacyId) && isValidCustomer(incoming());
+        allow delete: if isValidId(customerId) && isPharmacyAdmin(pharmacyId);
+      }
+
+      // 11.7 Cash Transactions (Tenant Isolated Append-Only Audit Journal)
+      match /cash_transactions/{transactionId} {
+        allow get: if isValidId(transactionId) && isPharmacyMember(pharmacyId);
+        allow list: if isPharmacyMember(pharmacyId);
+        allow create: if isValidId(transactionId) && isPharmacyCashier(pharmacyId) && isValidCashTransaction(incoming()) &&
+                         incoming().userId == request.auth.uid;
+        allow update: if false; // Append-only immutable journal
+        allow delete: if false;
+      }
+
+      // 11.8 Stock Movements (Tenant Isolated Append-Only Inventory Ledger)
+      match /stock_movements/{movementId} {
+        allow get: if isValidId(movementId) && isPharmacyMember(pharmacyId);
+        allow list: if isPharmacyMember(pharmacyId);
+        allow create: if isValidId(movementId) && isPharmacyMember(pharmacyId) && isValidStockMovement(incoming());
+        allow update: if false; // Append-only
+        allow delete: if false;
+      }
+
+      // 11.9 Audit Logs (Tenant Isolated Immutable System Audit Trail)
+      match /audit_logs/{auditId} {
+        allow get: if isValidId(auditId) && isPharmacyMember(pharmacyId);
+        allow list: if isPharmacyMember(pharmacyId);
+        allow create: if isValidId(auditId) && isPharmacyMember(pharmacyId) && isValidAuditLog(incoming());
+        allow update: if false;
+        allow delete: if false;
+      }
+
+      // 11.10 Sync Outbox (Tenant Isolated Idempotency & Retry Tracking)
+      match /sync_outbox/{operationId} {
+        allow get: if isValidId(operationId) && isPharmacyMember(pharmacyId);
+        allow list: if isPharmacyMember(pharmacyId);
+        allow create: if isValidId(operationId) && isPharmacyMember(pharmacyId) && isValidSyncOutbox(incoming(), pharmacyId);
+        allow update: if isValidId(operationId) && isPharmacyMember(pharmacyId) && isValidSyncOutbox(incoming(), pharmacyId);
+        allow delete: if isValidId(operationId) && isPharmacyAdmin(pharmacyId);
+      }
+    }
+  }
+}

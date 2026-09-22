@@ -13,13 +13,19 @@ import {
   Percent,
   Sliders,
   ShieldCheck,
-  Cpu
+  Cpu,
+  Moon,
+  Sun,
+  Laptop,
+  Eye
 } from 'lucide-react';
 import { db } from '../../db/sqlite';
 import { PharmacyProfile } from '../../types';
+import { useTheme } from '../../context/ThemeContext';
 
 export const SettingsView: React.FC = () => {
   const currentProfile = db.getState().profile;
+  const { theme, setTheme } = useTheme();
   const [profile, setProfile] = useState<PharmacyProfile>({ ...currentProfile });
   const [taxPercent, setTaxPercent] = useState<number>((currentProfile.tax_rate_bps || 0) / 100);
   const [marginPercent, setMarginPercent] = useState<number>((currentProfile.default_profit_margin_bps || 2000) / 100);
@@ -99,6 +105,109 @@ export const SettingsView: React.FC = () => {
           <span>{errorMsg}</span>
         </div>
       )}
+
+      {/* Theme & Night Shift Appearance Settings */}
+      <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+            <Moon className="w-4 h-4 text-indigo-600" />
+            <span>مظهر المنظومة ووضع النوبات الليلية (Night Shift Mode)</span>
+          </div>
+          <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
+            <Eye className="w-3.5 h-3.5 text-emerald-500" />
+            <span>مصمم للحد من إجهاد العين أثناء المناوبات والعمل الليلي</span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Light Mode */}
+          <button
+            type="button"
+            id="btn-theme-light"
+            onClick={() => setTheme('light')}
+            className={`p-4 rounded-2xl border text-right transition-all flex flex-col justify-between gap-3 ${
+              theme === 'light'
+                ? 'border-amber-500 bg-amber-50/50 ring-2 ring-amber-500/20 shadow-xs'
+                : 'border-slate-200 hover:border-slate-300 bg-white'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="p-2.5 rounded-xl bg-amber-100 text-amber-600">
+                <Sun className="w-5 h-5" />
+              </div>
+              {theme === 'light' && (
+                <span className="text-[10px] font-black text-amber-700 bg-amber-100/90 px-2 py-0.5 rounded-full">
+                  المفعل حالياً
+                </span>
+              )}
+            </div>
+            <div>
+              <h4 className="text-xs font-black text-slate-800">الوضع الفاتح (النهاري)</h4>
+              <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                إضاءة واضحة ومناسبة لساعات العمل النهارية الاعتيادية
+              </p>
+            </div>
+          </button>
+
+          {/* Dark Mode */}
+          <button
+            type="button"
+            id="btn-theme-dark"
+            onClick={() => setTheme('dark')}
+            className={`p-4 rounded-2xl border text-right transition-all flex flex-col justify-between gap-3 ${
+              theme === 'dark'
+                ? 'border-indigo-500 bg-indigo-950/20 ring-2 ring-indigo-500/20 shadow-xs'
+                : 'border-slate-200 hover:border-slate-300 bg-white'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="p-2.5 rounded-xl bg-indigo-900/40 text-indigo-400">
+                <Moon className="w-5 h-5" />
+              </div>
+              {theme === 'dark' && (
+                <span className="text-[10px] font-black text-indigo-300 bg-indigo-950/90 px-2 py-0.5 rounded-full border border-indigo-800">
+                  المفعل حالياً
+                </span>
+              )}
+            </div>
+            <div>
+              <h4 className="text-xs font-black text-slate-800">الوضع الليلي الداكن (Dark)</h4>
+              <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                خلفيات داكنة مريحة للعين تمنع التوهج أثناء المناوبات الليلية
+              </p>
+            </div>
+          </button>
+
+          {/* System Mode */}
+          <button
+            type="button"
+            id="btn-theme-system"
+            onClick={() => setTheme('system')}
+            className={`p-4 rounded-2xl border text-right transition-all flex flex-col justify-between gap-3 ${
+              theme === 'system'
+                ? 'border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-500/20 shadow-xs'
+                : 'border-slate-200 hover:border-slate-300 bg-white'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="p-2.5 rounded-xl bg-slate-100 text-slate-600">
+                <Laptop className="w-5 h-5" />
+              </div>
+              {theme === 'system' && (
+                <span className="text-[10px] font-black text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-full">
+                  المفعل حالياً
+                </span>
+              )}
+            </div>
+            <div>
+              <h4 className="text-xs font-black text-slate-800">تلقائي (حسب النظام)</h4>
+              <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                يتغير تلقائياً مع وضع نظام تشغيل جهاز الصيدلية أو الهاتف
+              </p>
+            </div>
+          </button>
+        </div>
+      </div>
 
       <form onSubmit={handleSave} className="space-y-5">
         {/* Section 1: Basic Identity */}

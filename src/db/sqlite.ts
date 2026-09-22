@@ -36,7 +36,8 @@ import {
   WorkShift,
   AuditLog,
   StockCountSession,
-  StockCountItem
+  StockCountItem,
+  SyncOutboxEntry
 } from '../types';
 
 export interface DatabaseState {
@@ -74,6 +75,7 @@ export interface DatabaseState {
   purchase_return_allocations: PurchaseReturnAllocation[];
   work_shifts: WorkShift[];
   audit_logs: AuditLog[];
+  sync_outbox: SyncOutboxEntry[];
   schema_migrations: Array<{ version: number; name: string; applied_at: number }>;
 }
 
@@ -217,6 +219,9 @@ export class SQLiteEngine {
     }
     // Run versioned migrations deterministically
     MigrationManager.runMigrations(state);
+    if (!state.sync_outbox) {
+      state.sync_outbox = [];
+    }
     return state;
   }
 
@@ -396,6 +401,7 @@ export class SQLiteEngine {
       purchase_return_allocations: [],
       work_shifts: [],
       audit_logs: [],
+      sync_outbox: [],
       schema_migrations: [
         { version: 1, name: '001_initial_core_schema', applied_at: now },
         { version: 2, name: '002_audit_trail_and_indices_support', applied_at: now },

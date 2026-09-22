@@ -21,10 +21,18 @@ import {
   FolderTree,
   ArrowLeftRight,
   Archive,
-  Smartphone
+  Smartphone,
+  Cloud,
+  CloudUpload,
+  Database,
+  LogIn,
+  LogOut,
+  RefreshCw
 } from 'lucide-react';
 import { db } from '../../db/sqlite';
+import { OutboxManager } from '../../db/outbox';
 import { FinanceService } from '../../services/FinanceService';
+import { FirebaseSyncService, SyncStatus } from '../../services/FirebaseSyncService';
 import { User, Cashbox, Customer, Supplier, ExpenseCategory, Expense, WorkShift } from '../../types';
 import { Money } from '../../utils/money';
 import { NumericInput } from '../ui/NumericInput';
@@ -105,6 +113,64 @@ export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
 
   // Action status message
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Firebase Cloud Sync State
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [syncProgress, setSyncProgress] = useState<{ msg: string; percent: number } | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  useEffect(() => {
+    refreshCloudStatus();
+  }, []);
+
+  const refreshCloudStatus = async () => {
+    try {
+      const status = await FirebaseSyncService.getStatus();
+      setSyncStatus(status);
+    } catch (err) {
+      console.warn('Failed to load Firebase sync status:', err);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      await FirebaseSyncService.loginWithGoogle();
+      await refreshCloudStatus();
+      showNotification('success', 'تم تسجيل الدخول بحساب Google بنجاح للمزامنة السحابية.');
+    } catch (err: any) {
+      showNotification('error', err?.message || 'تعذر تسجيل الدخول بحساب Google');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await FirebaseSyncService.logout();
+      await refreshCloudStatus();
+      showNotification('success', 'تم تسجيل الخروج من المزامنة السحابية.');
+    } catch (err: any) {
+      showNotification('error', err?.message || 'تعذر تسجيل الخروج');
+    }
+  };
+
+  const handleCloudSync = async () => {
+    setIsSyncing(true);
+    setSyncProgress({ msg: 'بدء الاتصال بقاعدة بيانات Firestore...', percent: 5 });
+    try {
+      const result = await FirebaseSyncService.syncToCloud((msg, percent) => {
+        setSyncProgress({ msg, percent });
+      });
+      await refreshCloudStatus();
+      showNotification(
+        'success',
+        `اكتملت المزامنة السحابية بنجاح! تم رفع بيانات الصيدلية و ${result.productsSynced} صنف إلى Firestore.`
+      );
+    } catch (err: any) {
+      showNotification('error', err?.message || 'فشلت المزامنة السحابية');
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncProgress(null), 3000);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -895,34 +961,193 @@ export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
 
       {/* SECTION 9: BACKUP & INTEGRITY */}
       {activeSection === 'backup' && (
-        <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900">النسخ الاحتياطي والأمان المالي</h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              تصدير واستيراد قاعدة بيانات الصيدلية Offline-First بصيغة JSON محمية ومشفرة.
-            </p>
+        <div className="space-y-4">
+          {/* Cloud Database (Firebase Firestore) Card */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-600 shrink-0 shadow-xs">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-slate-900">سحابة فايربيس (Firebase Firestore)</h3>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        syncStatus?.isOnline
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          syncStatus?.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                        }`}
+                      />
+                      {syncStatus?.isOnline ? 'متصل بالسحابة' : 'جاري الفحص'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    تخزين ومزامنة سحابية مؤمنة عبر قواعد بيانات Google Cloud Firestore وFirebase Auth.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <button
+                  onClick={refreshCloudStatus}
+                  title="تحديث حالة السحابة"
+                  className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors active:scale-95"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+                {syncStatus?.currentUser ? (
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-all"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>خروج ({syncStatus.currentUser.displayName || syncStatus.currentUser.email || 'مستخدم'})</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleGoogleLogin}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-all"
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>دخول بحساب Google</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Cloud Details Info */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                <span className="text-slate-500 block text-[11px]">معرّف المشروع (Firebase Project):</span>
+                <span className="font-mono font-bold text-slate-800 text-xs block mt-0.5">
+                  {syncStatus?.projectId || 'waking-bedrock-3xctm'}
+                </span>
+              </div>
+              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                <span className="text-slate-500 block text-[11px]">نطاق عزل الصيدلية المستقلة (Tenant Path):</span>
+                <span className="font-mono font-bold text-emerald-700 text-xs block mt-0.5 truncate" title={`/pharmacies/${db.getState().profile?.id || 'prof-01'}`}>
+                  {`/pharmacies/${db.getState().profile?.id || 'prof-01'}`}
+                </span>
+              </div>
+            </div>
+
+            {/* Outbox / Sync Queue Integrity Panel */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-blue-600" />
+                  <span>طابور المزامنة المحلي (Sync Outbox Queue):</span>
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-lg">
+                  Offline-First Sovereign
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs">
+                  <span className="text-[10px] text-slate-400 block font-medium">قيد الانتظار</span>
+                  <span className="text-sm font-bold font-mono text-amber-600">
+                    {syncStatus?.outbox?.pending_count ?? 0}
+                  </span>
+                </div>
+                <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs">
+                  <span className="text-[10px] text-slate-400 block font-medium">تمت المزامنة</span>
+                  <span className="text-sm font-bold font-mono text-emerald-600">
+                    {syncStatus?.outbox?.synced_count ?? 0}
+                  </span>
+                </div>
+                <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs">
+                  <span className="text-[10px] text-slate-400 block font-medium">معثرة / إعادة محاولة</span>
+                  <span className="text-sm font-bold font-mono text-rose-600">
+                    {syncStatus?.outbox?.failed_count ?? 0}
+                  </span>
+                </div>
+              </div>
+
+              {(syncStatus?.outbox?.failed_count ?? 0) > 0 && (
+                <button
+                  onClick={() => {
+                    const count = OutboxManager.retryAllFailed();
+                    refreshCloudStatus();
+                    showNotification('success', `تمت إعادة جدولة ${count} عملية معثرة للمزامنة فور توفر الاتصال.`);
+                  }}
+                  className="w-full py-1.5 px-3 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>إعادة محاولة كافة العمليات المعلقة ({syncStatus?.outbox?.failed_count})</span>
+                </button>
+              )}
+            </div>
+
+            {/* Sync Progress Bar */}
+            {syncProgress && (
+              <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-blue-900">
+                  <span>{syncProgress.msg}</span>
+                  <span>{syncProgress.percent}%</span>
+                </div>
+                <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 transition-all duration-300"
+                    style={{ width: `${syncProgress.percent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Cloud Sync Actions */}
+            <div className="pt-1">
+              <button
+                disabled={isSyncing}
+                onClick={handleCloudSync}
+                className="w-full py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all disabled:opacity-50 active:scale-98"
+              >
+                <CloudUpload className="w-4 h-4" />
+                <span>{isSyncing ? 'جاري رفع ومزامنة البيانات سحابيًا...' : 'مزامنة بيانات الصيدلية والمخزون إلى Firebase Firestore'}</span>
+              </button>
+              {syncStatus?.lastSyncTime && (
+                <p className="text-[11px] text-center text-slate-500 mt-2">
+                  آخر مزامنة سحابية ناجحة: {new Date(syncStatus.lastSyncTime).toLocaleTimeString('ar-YE')}
+                </p>
+              )}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-            <button
-              onClick={handleExportBackup}
-              className="p-4 rounded-2xl bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-900 flex items-center justify-between transition-colors"
-            >
-              <div className="text-right">
-                <span className="font-bold text-xs block">تصدير نسخة احتياطية كاملة</span>
-                <span className="text-[10px] text-blue-600 block">حفظ نسخة من كافة العمليات المالية والمخزون</span>
-              </div>
-              <Download className="w-5 h-5 text-blue-700" />
-            </button>
+          {/* Local Backup Card */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">النسخ الاحتياطي المحلي والأمان المالي</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                تصدير واستيراد قاعدة بيانات الصيدلية Offline-First بصيغة JSON محمية ومشفرة.
+              </p>
+            </div>
 
-            <label className="p-4 rounded-2xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-900 flex items-center justify-between cursor-pointer transition-colors">
-              <div className="text-right">
-                <span className="font-bold text-xs block">استعادة نسخة احتياطية</span>
-                <span className="text-[10px] text-slate-500 block">استرجاع قاعدة البيانات من ملف خارجي</span>
-              </div>
-              <RotateCcw className="w-5 h-5 text-slate-700" />
-              <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
-            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <button
+                onClick={handleExportBackup}
+                className="p-4 rounded-2xl bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-900 flex items-center justify-between transition-colors"
+              >
+                <div className="text-right">
+                  <span className="font-bold text-xs block">تصدير نسخة احتياطية محلية</span>
+                  <span className="text-[10px] text-blue-600 block">حفظ ملف JSON كامل للمخزون والعمليات</span>
+                </div>
+                <Download className="w-5 h-5 text-blue-700" />
+              </button>
+
+              <label className="p-4 rounded-2xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-900 flex items-center justify-between cursor-pointer transition-colors">
+                <div className="text-right">
+                  <span className="font-bold text-xs block">استعادة نسخة احتياطية</span>
+                  <span className="text-[10px] text-slate-500 block">استرجاع قاعدة البيانات من ملف خارجي</span>
+                </div>
+                <RotateCcw className="w-5 h-5 text-slate-700" />
+                <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
+              </label>
+            </div>
           </div>
         </div>
       )}

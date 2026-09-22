@@ -1,0 +1,359 @@
+{
+  "entities": {
+    "Admin": {
+      "title": "Admin",
+      "description": "Administrator identity role document used by security rules for authorization.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["super_admin", "admin"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "role"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Pharmacy staff user account for authentication and role identification.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "username": { "type": "string", "maxLength": 64 },
+        "fullName": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["admin", "pharmacist", "cashier"] },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "username", "fullName", "role", "isActive"]
+    },
+    "PharmacyProfile": {
+      "title": "PharmacyProfile",
+      "description": "Pharmacy organization metadata, tax number, license, and default currency.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "nameAr": { "type": "string", "maxLength": 128 },
+        "nameEn": { "type": "string", "maxLength": 128 },
+        "licenseNumber": { "type": "string", "maxLength": 64 },
+        "taxNumber": { "type": "string", "maxLength": 64 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "address": { "type": "string", "maxLength": 256 },
+        "currency": { "type": "string", "maxLength": 16 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "nameAr", "currency"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Pharmacy drug or pharmaceutical product catalog record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "nameAr": { "type": "string", "maxLength": 256 },
+        "nameEn": { "type": "string", "maxLength": 256 },
+        "scientificName": { "type": "string", "maxLength": 256 },
+        "barcode": { "type": "string", "maxLength": 64 },
+        "categoryId": { "type": "string", "maxLength": 64 },
+        "manufacturerId": { "type": "string", "maxLength": 64 },
+        "sellingPrice": { "type": "number" },
+        "purchasePrice": { "type": "number" },
+        "currentStock": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "nameAr", "sellingPrice", "isActive"]
+    },
+    "ProductBatch": {
+      "title": "ProductBatch",
+      "description": "Batch item with expiry date and unit purchase cost adhering to FEFO.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 128 },
+        "batchNumber": { "type": "string", "maxLength": 64 },
+        "expiryDate": { "type": "string", "maxLength": 32 },
+        "quantity": { "type": "number" },
+        "purchaseUnitCost": { "type": "number" },
+        "isDepleted": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "productId", "batchNumber", "expiryDate", "quantity", "purchaseUnitCost"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Point-of-sale customer sales transaction record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "invoiceNumber": { "type": "string", "maxLength": 64 },
+        "cashierId": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "shiftId": { "type": "string", "maxLength": 128 },
+        "paymentMethod": { "type": "string", "enum": ["cash", "card", "credit"] },
+        "grossTotal": { "type": "number" },
+        "discountTotal": { "type": "number" },
+        "netTotal": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["completed", "refunded", "cancelled"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "invoiceNumber", "cashierId", "netTotal", "paidAmount", "status"]
+    },
+    "SaleItem": {
+      "title": "SaleItem",
+      "description": "Individual line item in a sale invoice.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "saleId": { "type": "string", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 128 },
+        "batchId": { "type": "string", "maxLength": 128 },
+        "quantity": { "type": "number" },
+        "unitPrice": { "type": "number" },
+        "totalPrice": { "type": "number" }
+      },
+      "required": ["id", "saleId", "productId", "quantity", "unitPrice", "totalPrice"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "Inventory purchase invoice received from medical supplier.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "billNumber": { "type": "string", "maxLength": 64 },
+        "supplierId": { "type": "string", "maxLength": 128 },
+        "totalAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "paymentType": { "type": "string", "enum": ["cash", "credit"] },
+        "status": { "type": "string", "enum": ["completed", "draft", "cancelled"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "billNumber", "supplierId", "totalAmount", "status"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Pharmaceutical distributor or vendor record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "address": { "type": "string", "maxLength": 256 },
+        "balance": { "type": "number" },
+        "creditLimit": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "name", "isActive"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Patient or retail customer receiving medical products.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "balance": { "type": "number" },
+        "creditLimit": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "name", "isActive"]
+    },
+    "CashTransaction": {
+      "title": "CashTransaction",
+      "description": "Cashbox journal entry audit record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "cashboxId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["sale", "refund", "expense", "capital_deposit", "shift_closing"] },
+        "direction": { "type": "string", "enum": ["in", "out"] },
+        "amount": { "type": "number" },
+        "balanceAfter": { "type": "number" },
+        "description": { "type": "string", "maxLength": 256 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "cashboxId", "type", "direction", "amount", "balanceAfter", "userId"]
+    },
+    "Shift": {
+      "title": "Shift",
+      "description": "Cashier daily working session and balance reconciliation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "cashierId": { "type": "string", "maxLength": 128 },
+        "cashboxId": { "type": "string", "maxLength": 128 },
+        "openingBalance": { "type": "number" },
+        "closingBalance": { "type": "number" },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" }
+      },
+      "required": ["id", "cashierId", "cashboxId", "openingBalance", "status", "startTime"]
+    },
+    "PharmacyMember": {
+      "title": "PharmacyMember",
+      "description": "Pharmacy staff membership granting multi-tenant access to a pharmacy.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "pharmacyId": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["admin", "pharmacist", "cashier", "storekeeper"] },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "pharmacyId", "role", "isActive"]
+    },
+    "StockMovement": {
+      "title": "StockMovement",
+      "description": "Immutable ledger entry of inventory changes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 128 },
+        "batchId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["sale", "purchase", "sale_return", "purchase_return", "adjustment", "stocktake"] },
+        "quantity": { "type": "number" },
+        "balanceAfter": { "type": "number" },
+        "referenceId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "productId", "type", "quantity", "balanceAfter", "referenceId", "userId"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable system audit trail.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "action": { "type": "string", "maxLength": 128 },
+        "entity": { "type": "string", "maxLength": 128 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "deviceId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "action", "entity", "entityId"]
+    },
+    "SyncOutbox": {
+      "title": "SyncOutbox",
+      "description": "Sync queue item with deterministic operation_id for idempotent cloud sync.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "operationId": { "type": "string", "maxLength": 128 },
+        "pharmacyId": { "type": "string", "maxLength": 128 },
+        "entityType": { "type": "string", "maxLength": 64 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "action": { "type": "string", "enum": ["create", "update", "delete"] },
+        "status": { "type": "string", "enum": ["pending", "processing", "synced", "failed", "retry"] },
+        "retryCount": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "operationId", "pharmacyId", "entityType", "entityId", "action", "status"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "Collection of trusted administrative identity documents."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Staff users with roles and access status."
+    },
+    "/pharmacy_profiles/{profileId}": {
+      "schema": "PharmacyProfile",
+      "description": "Pharmacy enterprise settings and branding."
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Medical products catalog and prices."
+    },
+    "/products/{productId}/batches/{batchId}": {
+      "schema": "ProductBatch",
+      "description": "FEFO batch items and expiration dates for a product."
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "POS sales invoices."
+    },
+    "/sales/{saleId}/items/{itemId}": {
+      "schema": "SaleItem",
+      "description": "Line items for a specific sale."
+    },
+    "/purchases/{purchaseId}": {
+      "schema": "Purchase",
+      "description": "Supplier purchase invoices."
+    },
+    "/suppliers/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Wholesale pharmaceutical suppliers."
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Pharmacy customer patient accounts."
+    },
+    "/cash_transactions/{transactionId}": {
+      "schema": "CashTransaction",
+      "description": "Cashbox audit ledger."
+    },
+    "/shifts/{shiftId}": {
+      "schema": "Shift",
+      "description": "Cashier point of sale operational shifts."
+    },
+    "/pharmacies/{pharmacyId}/members/{memberId}": {
+      "schema": "PharmacyMember",
+      "description": "Multi-tenant pharmacy staff membership with specific roles."
+    },
+    "/pharmacies/{pharmacyId}/products/{productId}": {
+      "schema": "Product",
+      "description": "Tenant-isolated products catalog."
+    },
+    "/pharmacies/{pharmacyId}/products/{productId}/batches/{batchId}": {
+      "schema": "ProductBatch",
+      "description": "Tenant-isolated FEFO batches."
+    },
+    "/pharmacies/{pharmacyId}/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Tenant-isolated point-of-sale invoices."
+    },
+    "/pharmacies/{pharmacyId}/sales/{saleId}/items/{itemId}": {
+      "schema": "SaleItem",
+      "description": "Tenant-isolated sale items."
+    },
+    "/pharmacies/{pharmacyId}/purchases/{purchaseId}": {
+      "schema": "Purchase",
+      "description": "Tenant-isolated supplier purchase bills."
+    },
+    "/pharmacies/{pharmacyId}/suppliers/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Tenant-isolated suppliers."
+    },
+    "/pharmacies/{pharmacyId}/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Tenant-isolated customers."
+    },
+    "/pharmacies/{pharmacyId}/cash_transactions/{transactionId}": {
+      "schema": "CashTransaction",
+      "description": "Tenant-isolated append-only cashbox journal."
+    },
+    "/pharmacies/{pharmacyId}/stock_movements/{movementId}": {
+      "schema": "StockMovement",
+      "description": "Tenant-isolated append-only stock movement audit ledger."
+    },
+    "/pharmacies/{pharmacyId}/audit_logs/{auditId}": {
+      "schema": "AuditLog",
+      "description": "Tenant-isolated immutable system audit logs."
+    },
+    "/pharmacies/{pharmacyId}/sync_outbox/{operationId}": {
+      "schema": "SyncOutbox",
+      "description": "Tenant-isolated sync queue for idempotent writes and retry tracking."
+    }
+  }
+}

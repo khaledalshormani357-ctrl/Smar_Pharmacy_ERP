@@ -975,3 +975,53 @@ export interface ShareResult {
   message?: string;
 }
 
+// 8. Multi-Tenant Cloud Sync & Outbox Models
+export type SyncOutboxStatus = 'pending' | 'processing' | 'synced' | 'failed' | 'retry';
+
+export interface SyncOutboxEntry {
+  id: string;
+  operation_id: string;
+  pharmacy_id: string;
+  entity_type:
+    | 'pharmacy_profile'
+    | 'product'
+    | 'batch'
+    | 'sale'
+    | 'sale_item'
+    | 'purchase'
+    | 'cash_transaction'
+    | 'customer'
+    | 'supplier'
+    | 'stock_movement'
+    | 'audit_log'
+    | 'shift';
+  entity_id: string;
+  action: 'create' | 'update' | 'delete';
+  payload: any;
+  status: SyncOutboxStatus;
+  retry_count: number;
+  max_retries: number;
+  last_attempt_at?: number;
+  next_retry_at?: number;
+  last_error?: string;
+  created_at: number;
+  synced_at?: number;
+}
+
+export interface SyncSummary {
+  total_queued: number;
+  pending_count: number;
+  synced_count: number;
+  failed_count: number;
+  last_sync_time?: number;
+  in_progress: boolean;
+}
+
+export interface PharmacyMember {
+  user_id: string;
+  pharmacy_id: string;
+  role: 'admin' | 'pharmacist' | 'cashier' | 'storekeeper';
+  is_active: boolean;
+  created_at: number;
+}
+

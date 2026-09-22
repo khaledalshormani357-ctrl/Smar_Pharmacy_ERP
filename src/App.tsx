@@ -145,7 +145,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-emerald-100 selection:text-emerald-900" dir="rtl">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-emerald-100 dark:selection:bg-emerald-950 selection:text-emerald-900 dark:selection:text-emerald-200 transition-colors duration-200" dir="rtl">
       {/* Persistent App Header */}
       <AppHeader
         profile={profile}
@@ -195,7 +195,7 @@ export function App() {
           type="button"
           onClick={() => setShowAssistant(true)}
           title="المساعد الصيدلاني الذكي (البدائل والجرعات والتعارضات)"
-          className="group relative flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-3.5 py-3 rounded-full shadow-lg shadow-indigo-600/30 hover:scale-105 active:scale-95 transition-all border-2 border-white"
+          className="group relative flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-3.5 py-3 rounded-full shadow-lg shadow-indigo-600/30 hover:scale-105 active:scale-95 transition-all border-2 border-white dark:border-slate-800"
         >
           <Bot className="w-5 h-5 text-indigo-100 animate-pulse" />
           <span className="text-xs font-bold hidden sm:inline">المساعد الذكي</span>
