@@ -80,7 +80,8 @@ export class SalesService {
           throw new Error('رقم الفاتورة مكرر، يرجى إعادة المحاولة.');
         }
 
-        let subtotal = 0;
+        let grossSubtotal = 0;
+        let lineDiscountsTotal = 0;
         let totalCogs = 0;
 
         const saleItemsToInsert: SaleItem[] = [];
@@ -104,7 +105,8 @@ export class SalesService {
             throw new Error(`خصم الصنف (${item.productName}) يتجاوز إجمالي الصنف.`);
           }
           const lineTotal = lineGross - item.discountAmount;
-          subtotal += lineTotal;
+          grossSubtotal += lineGross;
+          lineDiscountsTotal += item.discountAmount;
 
           const baseQtyNeeded = Math.round(item.quantity * item.unitFactor);
           if (baseQtyNeeded <= 0) {
@@ -184,6 +186,7 @@ export class SalesService {
             id: saleItemId,
             sale_id: saleId,
             product_id: item.productId,
+            product_name_snapshot: item.productName,
             unit_name: item.unitName,
             unit_factor: item.unitFactor,
             quantity: item.quantity,
@@ -199,11 +202,12 @@ export class SalesService {
 
         // 2. Invoice Financial Calculations (Integer Money Units)
         const invoiceDiscount = Math.max(0, payload.discount_amount || 0);
-        if (invoiceDiscount > subtotal) {
+        const totalDiscount = lineDiscountsTotal + invoiceDiscount;
+        if (totalDiscount > grossSubtotal) {
           throw new Error('خصم الفاتورة لا يمكن أن يتجاوز المجموع الفرعي.');
         }
 
-        const discountedSubtotal = subtotal - invoiceDiscount;
+        const discountedSubtotal = grossSubtotal - totalDiscount;
 
         // Configurable Tax Rate (basis points)
         const profileTaxRateBps = state.profile?.tax_rate_bps || 0;
@@ -313,8 +317,8 @@ export class SalesService {
           sale_type: payload.sale_type,
           payment_method: isCash ? 'cashbox' : 'credit',
           cashbox_id: cashboxId,
-          subtotal,
-          discount_amount: invoiceDiscount,
+          subtotal: grossSubtotal,
+          discount_amount: totalDiscount,
           tax_amount: taxAmount,
           net_total: netTotal,
           paid_amount: paidAmount,

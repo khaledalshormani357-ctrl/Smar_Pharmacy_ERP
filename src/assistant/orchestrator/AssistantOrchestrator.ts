@@ -29,7 +29,8 @@ export class AssistantOrchestrator {
   static async processMessage(
     text: string,
     context: AssistantContext,
-    history: AssistantMessage[] = []
+    history: AssistantMessage[] = [],
+    options?: { model?: string; role?: string }
   ): Promise<AssistantMessage> {
     const trimmed = (text || '').trim();
     if (!trimmed) {
@@ -357,7 +358,7 @@ export class AssistantOrchestrator {
         }
 
         default: {
-          return await this.queryAIAssistant(trimmed, context, history);
+          return await this.queryAIAssistant(trimmed, context, history, options);
         }
       }
     } catch (err: any) {
@@ -379,7 +380,8 @@ export class AssistantOrchestrator {
   private static async queryAIAssistant(
     query: string,
     context: AssistantContext,
-    history: AssistantMessage[] = []
+    history: AssistantMessage[] = [],
+    options?: { model?: string; role?: string }
   ): Promise<AssistantMessage> {
     if (!context.isOnline) {
       return {
@@ -444,8 +446,10 @@ export class AssistantOrchestrator {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: query,
-          history: history.slice(-6).map((m) => ({ sender: m.sender, text: m.text })),
-          context: erpContext
+          history: history.slice(-10).map((m) => ({ sender: m.sender, text: m.text })),
+          context: erpContext,
+          model: options?.model || 'gemini-3.5-flash',
+          role: options?.role || 'general'
         }),
         signal: controller.signal
       });
@@ -463,7 +467,10 @@ export class AssistantOrchestrator {
         sender: 'assistant',
         timestamp: Date.now(),
         text: data.text || 'تمت معالجة السؤال بنجاح.',
-        responseType: 'TEXT'
+        responseType: 'TEXT',
+        model: data.model,
+        role: data.role,
+        latencyMs: data.latencyMs
       };
     } catch (err: any) {
       if (err.name === 'AbortError') {

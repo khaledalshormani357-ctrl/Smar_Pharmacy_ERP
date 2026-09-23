@@ -1,6 +1,8 @@
 // Database Migrations & Version Tracking for Smart Pharmacy ERP
 // Strict versioned, deterministic, idempotent schema upgrades
 
+import { ARABIC_RECONSTRUCTION_MAP } from '../utils/arabicCatalogRepair';
+
 export interface SchemaMigration {
   version: number;
   name: string;
@@ -133,6 +135,78 @@ export class MigrationManager {
         for (const cb of state.cashboxes) {
           if (typeof cb.cached_balance !== 'number') {
             cb.cached_balance = 0;
+          }
+        }
+      }
+    },
+    {
+      version: 7,
+      name: '007_repair_arabic_catalog_and_units',
+      up: (state) => {
+        // 1. Repair Arabic names and disease indications in products
+        if (Array.isArray(state.products)) {
+          for (const p of state.products) {
+            if (p.disease_indication) {
+              const orig = p.disease_indication.trim();
+              const fixed = ARABIC_RECONSTRUCTION_MAP[orig];
+              if (fixed) {
+                p.disease_indication = fixed;
+                p.name_ar = `${p.name_en || p.name_ar} (${fixed})`;
+              }
+            }
+          }
+        }
+
+        // 2. Repair categories
+        if (Array.isArray(state.categories)) {
+          for (const c of state.categories) {
+            if (c.name_ar && ARABIC_RECONSTRUCTION_MAP[c.name_ar.trim()]) {
+              c.name_ar = ARABIC_RECONSTRUCTION_MAP[c.name_ar.trim()];
+            }
+          }
+        }
+
+        // 3. Ensure authoritative unit conversions for all products
+        if (!Array.isArray(state.unit_conversions)) {
+          state.unit_conversions = [];
+        }
+
+        if (Array.isArray(state.products)) {
+          for (const prod of state.products) {
+            const existing = state.unit_conversions.filter((uc: any) => uc.product_id === prod.id);
+            const baseUnitName = prod.base_unit || 'حبة';
+
+            // Check if base unit conversion exists
+            let baseConv = existing.find((uc: any) => uc.conversion_factor === 1);
+            if (!baseConv) {
+              baseConv = {
+                id: 'uc-' + Math.random().toString(36).substring(2, 9),
+                product_id: prod.id,
+                unit_name: baseUnitName,
+                conversion_factor: 1,
+                selling_price: prod.current_selling_price || 0,
+                is_default_sale: true
+              };
+              state.unit_conversions.push(baseConv);
+            } else if (baseConv.selling_price === 0 && prod.current_selling_price > 0) {
+              baseConv.selling_price = prod.current_selling_price;
+            }
+
+            // Check if selling_unit exists and differs from base_unit
+            if (prod.selling_unit && prod.selling_unit !== baseUnitName) {
+              const saleConv = existing.find((uc: any) => uc.unit_name === prod.selling_unit);
+              if (!saleConv) {
+                const factor = prod.pack_size && prod.pack_size > 1 ? prod.pack_size : 10;
+                state.unit_conversions.push({
+                  id: 'uc-' + Math.random().toString(36).substring(2, 9),
+                  product_id: prod.id,
+                  unit_name: prod.selling_unit,
+                  conversion_factor: factor,
+                  selling_price: prod.current_selling_price > 0 ? prod.current_selling_price * factor : 0,
+                  is_default_sale: false
+                });
+              }
+            }
           }
         }
       }

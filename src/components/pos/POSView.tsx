@@ -120,13 +120,31 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
 
     setCart((prev) => {
       const existingIdx = prev.findIndex((item) => item.productId === product.id);
-      const defaultUnit =
-        product.conversions.find((u: any) => u.is_default_sale) ||
-        product.conversions[0] || {
-          unit_name: product.base_unit,
+
+      // Build authoritative available units list
+      let conversions = product.conversions && product.conversions.length > 0 ? [...product.conversions] : [];
+      if (!conversions.some((uc: any) => uc.conversion_factor === 1)) {
+        conversions.unshift({
+          unit_name: product.base_unit || 'حبة',
           conversion_factor: 1,
-          selling_price: product.current_selling_price
-        };
+          selling_price: product.current_selling_price || 0,
+          is_default_sale: true
+        });
+      }
+
+      const defaultUnit =
+        conversions.find((u: any) => u.is_default_sale) ||
+        conversions[0];
+
+      const defaultPrice = defaultUnit.selling_price > 0
+        ? defaultUnit.selling_price
+        : Math.round(defaultUnit.conversion_factor * (product.current_selling_price || 0));
+
+      const availableUnits = conversions.map((uc: any) => ({
+        unitName: uc.unit_name,
+        factor: uc.conversion_factor,
+        price: uc.selling_price > 0 ? uc.selling_price : Math.round(uc.conversion_factor * (product.current_selling_price || 0))
+      }));
 
       if (existingIdx !== -1) {
         const item = prev[existingIdx];
@@ -144,12 +162,6 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
         return updated;
       }
 
-      const availableUnits = product.conversions.map((uc: any) => ({
-        unitName: uc.unit_name,
-        factor: uc.conversion_factor,
-        price: uc.selling_price
-      }));
-
       const newItem: CartItem = {
         productId: product.id,
         productName: product.name_ar,
@@ -158,7 +170,7 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
         unitName: defaultUnit.unit_name,
         unitFactor: defaultUnit.conversion_factor,
         quantity: 1,
-        unitPrice: defaultUnit.selling_price,
+        unitPrice: defaultPrice,
         discountAmount: 0,
         availableUnits,
         availableStockBase: product.totalBaseStock
@@ -176,6 +188,7 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
     }
     setCart((prev) => {
       const item = prev[index];
+      if (!item) return prev;
       const baseNeeded = Math.round(newQty * item.unitFactor);
       if (baseNeeded > item.availableStockBase) {
         setErrorMsg(`الكمية تتجاوز الرصيد المتاح بالمخزن (${item.availableStockBase}).`);
@@ -185,6 +198,18 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
       updated[index] = { ...item, quantity: newQty };
       return updated;
     });
+  };
+
+  const handleQuantityInputChange = (index: number, newQty: number) => {
+    if (newQty > 0) {
+      updateQuantity(index, newQty);
+    }
+  };
+
+  const handleQuantityInputBlur = (index: number, val: number) => {
+    if (val <= 0) {
+      updateQuantity(index, 1);
+    }
   };
 
   const updateLineDiscount = (index: number, discountMajor: number) => {
@@ -226,13 +251,15 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
     setCart((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Financial calculations
-  const subtotalMinor = cart.reduce(
-    (sum, item) => sum + (item.unitPrice * item.quantity - item.discountAmount),
+  // Financial calculations (Integer minor units)
+  const grossSubtotalMinor = cart.reduce(
+    (sum, item) => sum + item.unitPrice * item.quantity,
     0
   );
-  const discountMinor = Money.toMinor(discountVal);
-  const discountedSubtotal = Math.max(0, subtotalMinor - discountMinor);
+  const lineDiscountsMinor = cart.reduce((sum, item) => sum + item.discountAmount, 0);
+  const invoiceDiscountMinor = Money.toMinor(discountVal);
+  const totalDiscountMinor = lineDiscountsMinor + invoiceDiscountMinor;
+  const discountedSubtotal = Math.max(0, grossSubtotalMinor - totalDiscountMinor);
 
   // Configured VAT
   const profileTaxRateBps = db.getState().profile?.tax_rate_bps || 0;
@@ -267,7 +294,7 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
         sale_type: saleType,
         cashbox_id: cashbox ? cashbox.id : 'cash-01',
         items: cart,
-        discount_amount: discountMinor,
+        discount_amount: invoiceDiscountMinor,
         tax_rate_bps: profileTaxRateBps,
         notes: notes.trim(),
         idempotency_key: idempotencyKey
@@ -557,9 +584,15 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
                       >
                         -
                       </button>
-                      <span className="w-9 text-center font-mono font-bold text-sm text-slate-800">
-                        {item.quantity}
-                      </span>
+                      <NumericInput
+                        value={item.quantity}
+                        onChange={(q) => handleQuantityInputChange(idx, q)}
+                        onBlur={(q) => handleQuantityInputBlur(idx, q)}
+                        allowDecimals={false}
+                        min={1}
+                        placeholder="1"
+                        className="w-12 h-7 text-center font-mono font-bold text-sm bg-transparent border-0 px-0 py-0 focus:ring-1 focus:ring-emerald-500 rounded"
+                      />
                       <button
                         onClick={() => updateQuantity(idx, item.quantity + 1)}
                         className="w-7 h-7 flex items-center justify-center rounded-lg bg-emerald-600 text-white font-bold shadow-xs active:scale-95"
@@ -651,28 +684,52 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
           </div>
         )}
 
-        {/* Discount, Tax & Totals Line */}
-        <div className="flex items-center justify-between gap-4 pt-1">
-          <div className="flex items-center gap-2 w-40">
-            <span className="text-xs text-slate-500 font-medium shrink-0">خصم الفاتورة:</span>
-            <NumericInput
-              value={discountVal}
-              onChange={setDiscountVal}
-              placeholder="0.00"
-              className="py-1.5 text-xs text-center"
-            />
+        {/* Complete Financial Breakdown Panel */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5 text-xs">
+          {/* Subtotal */}
+          <div className="flex justify-between items-center text-slate-600">
+            <span className="font-medium">المجموع الفرعي:</span>
+            <span className="font-mono font-bold text-slate-800 text-sm" dir="ltr">
+              {Money.format(grossSubtotalMinor)}
+            </span>
           </div>
 
-          <div className="text-left">
-            {profileTaxRateBps > 0 && (
-              <div className="text-[10px] text-slate-400">
-                شامل ضريبة {profileTaxRateBps / 100}% (+{Money.format(taxMinor)})
+          {/* Discount Input & Value */}
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-1.5">
+              <span className="font-medium text-slate-600 shrink-0">خصم الفاتورة:</span>
+              <div className="w-24">
+                <NumericInput
+                  value={discountVal}
+                  onChange={setDiscountVal}
+                  placeholder="0.00"
+                  className="py-1 px-2 text-xs text-center h-7"
+                />
               </div>
-            )}
-            <div className="text-[11px] text-slate-400 font-medium">الصافي المطلوب:</div>
-            <div className="text-xl font-extrabold font-mono text-emerald-700 tracking-tight" dir="ltr">
-              {Money.format(netTotalMinor)}
             </div>
+            {totalDiscountMinor > 0 && (
+              <span className="font-mono font-bold text-rose-600" dir="ltr">
+                -{Money.format(totalDiscountMinor)}
+              </span>
+            )}
+          </div>
+
+          {/* Tax */}
+          {profileTaxRateBps > 0 && (
+            <div className="flex justify-between items-center text-slate-600">
+              <span className="font-medium">ضريبة القيمة المضافة ({profileTaxRateBps / 100}%):</span>
+              <span className="font-mono font-bold text-slate-700" dir="ltr">
+                +{Money.format(taxMinor)}
+              </span>
+            </div>
+          )}
+
+          {/* Grand Total */}
+          <div className="border-t border-slate-200 pt-2 flex justify-between items-center">
+            <span className="font-extrabold text-slate-900 text-sm">الإجمالي النهائي (الصافي):</span>
+            <span className="text-xl font-black font-mono text-emerald-700 tracking-tight" dir="ltr">
+              {Money.format(netTotalMinor)}
+            </span>
           </div>
         </div>
 

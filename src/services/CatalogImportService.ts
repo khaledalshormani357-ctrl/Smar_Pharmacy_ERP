@@ -3,6 +3,7 @@
 
 import { db } from '../db/sqlite';
 import { Product, Category, Manufacturer } from '../types';
+import { reconstructArabicText } from '../utils/arabicCatalogRepair';
 
 export interface CatalogMetadata {
   version: string;
@@ -327,9 +328,10 @@ export class CatalogImportService {
       for (const cat of seed.categories) {
         const nameKey = (cat.name_en || cat.name_ar || '').toLowerCase().trim();
         if (!existingCategoryIds.has(cat.id) && !existingCategoryNames.has(nameKey)) {
+          const cleanNameAr = reconstructArabicText(cat.name_ar) || cat.name_ar;
           state.categories.push({
             id: cat.id,
-            name_ar: cat.name_ar,
+            name_ar: cleanNameAr,
             name_en: cat.name_en,
             is_active: true
           });
@@ -401,8 +403,15 @@ export class CatalogImportService {
             if (existingProductIds.has(prod.id) || existingSignatures.has(sig)) {
               skippedDuplicates++;
             } else {
+              const fixedDisease = prod.disease_indication ? reconstructArabicText(prod.disease_indication) || prod.disease_indication : undefined;
+              const fixedNameAr = fixedDisease
+                ? `${prod.name_en || prod.name_ar} (${fixedDisease})`
+                : (prod.name_ar || prod.name_en);
+
               state.products.push({
                 ...prod,
+                name_ar: fixedNameAr,
+                disease_indication: fixedDisease,
                 current_purchase_price: prod.current_purchase_price || 0,
                 current_selling_price: prod.current_selling_price || 0,
                 min_stock_level: prod.min_stock_level || 0,
@@ -412,6 +421,32 @@ export class CatalogImportService {
               existingProductIds.add(prod.id);
               existingSignatures.add(sig);
               importedProducts++;
+
+              // Authoritative Unit Conversions
+              if (!Array.isArray(state.unit_conversions)) {
+                state.unit_conversions = [];
+              }
+              const baseUnitName = prod.base_unit || 'حبة';
+              state.unit_conversions.push({
+                id: 'uc-' + Math.random().toString(36).substring(2, 9),
+                product_id: prod.id,
+                unit_name: baseUnitName,
+                conversion_factor: 1,
+                selling_price: prod.current_selling_price || 0,
+                is_default_sale: true
+              });
+
+              if (prod.selling_unit && prod.selling_unit !== baseUnitName) {
+                const factor = prod.pack_size && prod.pack_size > 1 ? prod.pack_size : 10;
+                state.unit_conversions.push({
+                  id: 'uc-' + Math.random().toString(36).substring(2, 9),
+                  product_id: prod.id,
+                  unit_name: prod.selling_unit,
+                  conversion_factor: factor,
+                  selling_price: prod.current_selling_price ? prod.current_selling_price * factor : 0,
+                  is_default_sale: false
+                });
+              }
             }
           } catch (itemErr) {
             console.warn('Error processing product during catalog import:', itemErr);

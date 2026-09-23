@@ -108,19 +108,35 @@ async function startServer() {
     try {
       const startTime = Date.now();
       const ai = getAI();
-      // Fast lightweight ping
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: [{ role: 'user', parts: [{ text: 'PING' }] }],
-        config: { maxOutputTokens: 5, temperature: 0.1 },
-      });
+      // Fast lightweight ping with resilient model fallback
+      let activePingModel = GEMINI_MODEL;
+      let response;
+      try {
+        response = await ai.models.generateContent({
+          model: activePingModel,
+          contents: [{ role: 'user', parts: [{ text: 'PING' }] }],
+          config: { maxOutputTokens: 5, temperature: 0.1 },
+        });
+      } catch (pingErr: any) {
+        if ((pingErr.status === 503 || pingErr.status === 429 || pingErr.message?.includes('503')) && activePingModel !== 'gemini-3-flash-preview') {
+          activePingModel = 'gemini-3-flash-preview';
+          response = await ai.models.generateContent({
+            model: activePingModel,
+            contents: [{ role: 'user', parts: [{ text: 'PING' }] }],
+            config: { maxOutputTokens: 5, temperature: 0.1 },
+          });
+        } else {
+          throw pingErr;
+        }
+      }
+
       const latency = Date.now() - startTime;
       const text = (response.text || '').trim();
 
       return res.json({
         configured: true,
         provider: 'google-gemini',
-        model: GEMINI_MODEL,
+        model: activePingModel,
         reachable: text.length > 0,
         latencyMs: latency,
         lastError: null,
@@ -132,6 +148,7 @@ async function startServer() {
         provider: 'google-gemini',
         model: GEMINI_MODEL,
         reachable: false,
+        errorCode: classified.code,
         lastError: `${classified.code}: ${classified.message}`,
       });
     }
@@ -141,7 +158,7 @@ async function startServer() {
   app.post('/api/assistant/chat', async (req, res) => {
     const startTime = Date.now();
     try {
-      const { message, messages, history, context } = req.body || {};
+      const { message, messages, history, context, model: requestedModel, role: requestedRole } = req.body || {};
 
       // Determine user query text
       let queryText = '';
@@ -168,10 +185,71 @@ async function startServer() {
 
       const ai = getAI();
 
+      // Dynamic model selection based on task complexity and requirements:
+      // gemini-3-flash-preview for high availability and instant responsiveness (default)
+      // gemini-3.1-pro-preview for complex tasks (clinical drug interactions, advanced calculations)
+      // gemini-3.5-flash for general tasks
+      // gemini-3.1-flash-lite for tasks that should happen fast
+      let activeModel: string = 'gemini-3-flash-preview';
+      if (requestedModel === 'gemini-3.1-pro-preview') {
+        activeModel = 'gemini-3.1-pro-preview';
+      } else if (requestedModel === 'gemini-3.1-flash-lite') {
+        activeModel = 'gemini-3.1-flash-lite';
+      } else if (requestedModel === 'gemini-3.8-flash') {
+        activeModel = 'gemini-3.8-flash';
+      } else if (requestedModel === 'gemini-3.5-flash') {
+        activeModel = 'gemini-3.5-flash';
+      } else if (requestedModel === 'gemini-3-flash-preview') {
+        activeModel = 'gemini-3-flash-preview';
+      }
+
+      // Role-specific System Instructions
+      let roleInstruction = '';
+      switch (requestedRole) {
+        case 'clinical':
+          roleInstruction = `دورك الحالي: صيدلي سريري استشاري وخبير علاجيات (Clinical Pharmacist Specialist).
+تخصصك وأولوياتك الإلزامية:
+1. الفحص العميق للتعارضات والتداخلات الدوائية (Drug-Drug & Drug-Food Interactions) وتحديد درجة خطورتها بدقة (ممنوع الجمع Contraindicated، تعارض كبير Major، تعارض متوسط Moderate) وإجراءات التدبير السريري.
+2. تدقيق الجرعات وحساباتها للأطفال (Pediatric dosing) والبالغين وكبار السن، وتعديل الجرعات لمرضى القصور الكلوي أو الكبدي.
+3. اقتراح البدائل العلاجية والدوائية المتطابقة علمياً (نفس المادة الفعالة والتركيز والشكل الدوائي) والتنبيه لفروق التوافر الحيوي.
+4. التنبيه لموانع الاستعمال، والآثار الجانبية، ومراقبة المعايير الحيوية مع التأكيد على مراجعة الصيدلي المباشرة.`;
+          break;
+        case 'inventory':
+          roleInstruction = `دورك الحالي: مستشار إدارة المخزون وسلاسل الإمداد الصيدلاني (Pharmacy Inventory & Supply Chain Advisor).
+تخصصك وأولوياتك الإلزامية:
+1. تطبيق سياسة الصرف الصيدلاني الصارمة FEFO (الأقرب انتهاءً يصرف أولاً First Expired, First Out).
+2. إدارة التشغيلات (Batches) وتقليل هدر وتلف الأدوية عبر استراتيجيات تدوير المخزون ومتابعة تواريخ الصلاحية.
+3. إرشادات الجرد الدوري، تسوية الفروقات المخزنية، وتحديد نقاط إعادة الطلب (Reorder Points).
+4. تقييم حركة الأصناف (سريعة الدوران vs الراكدة) وتفادي نفاد النواقص الحيوية.`;
+          break;
+        case 'finance':
+          roleInstruction = `دورك الحالي: المستشار المالي ومحاسب الصيدلية الذكي (Pharmacy Financial & Accounting Copilot).
+تخصصك وأولوياتك الإلزامية:
+1. التدقيق المحاسبي لحركات الصناديق اليومية والنقدية والمصروفات التشغيلية.
+2. تحليل هوامش الربح الإجمالي، التكلفة التاريخية للبضاعة المباعة (Historical COGS)، ومردودات المبيعات والمشتريات.
+3. رقابة مديونيات العملاء الآجلة، وسقوف الائتمان، وحسابات الموردين والدفعات.
+4. إجراءات تدقيق إغلاق الوردية (Shift Reconciliation) والتقارير المالية والضريبية.`;
+          break;
+        case 'fast':
+          roleInstruction = `دورك الحالي: المساعد الصيدلاني السريع والموجز (Fast Pharmacy Desk Assistant).
+تخصصك وأولوياتك الإلزامية:
+1. تقديم إجابات فورية، مباشرة، فائقة الإيجاز (في 1-3 نقاط محددة كحد أقصى) تلائم سرعة وضغط كاونتر المبيعات ونقطة البيع (POS).
+2. عدم الإطالة في المقدمات والتحيات؛ ادخل فوراً في الإجابة الجوهرية (الاستخدام، الجرعة الاعتيادية، أو السعر والتوفر).`;
+          break;
+        default:
+          roleInstruction = `دورك الحالي: المساعد الشامل لنظام الصيدلية الذكي (General Smart Pharmacy Copilot).
+تخصصك وأولوياتك الإلزامية:
+1. تقديم الدعم الشامل للصيدلي في الاستخدام اليومي للنظام، توجيه المستخدم لشاشات POS والمخزون والمشتريات والمالية.
+2. الاستعلام عن الأصناف والأرصدة وتقديم التوجيهات التشغيلية والصيدلانية السليمة.`;
+          break;
+      }
+
       // Formulate Grounded Pharmacy Copilot System Prompt
       const systemPrompt = `أنت مساعد صيدلية ذكي ومستشار أنظمة صيدلانية متقدم (Smart Pharmacy Copilot) يعمل داخل نظام إدارة الصيدليات الفعلي (Smart Pharmacy ERP).
 
-قواعد ومبادئ إلزامية:
+${roleInstruction}
+
+قواعد ومبادئ عامة صارمة:
 1. أنت تعمل داخل نظام صيدلية حقيقي وليست بيئة تجريبية أو وهمية.
 2. [قاعدة منع اختراع البيانات]: لا تخترع بيانات غير موجودة في قاعدة بيانات الصيدلية (مثل رصيد صنف وهمي، أو أسعار غير مسجلة، أو فواتير وهمية).
    - إذا سألك المستخدم عن رصيد صنف معين أو تفاصيل مالية، اعتمد فقط على البيانات المتوفرة في سياق الصيدلية أدناه.
@@ -187,16 +265,16 @@ async function startServer() {
      * المشتريات (Purchases): تسجيل فواتير الشراء والتوريد، مردودات المشتريات، متابعة حسابات الموردين.
      * الصناديق والمالية: حركات الصندوق، المصروفات، المقبوضات، إغلاق الوردية، التقارير.
 5. لا تنفذ أي تعديل مالي أو مخزني بشكل تلقائي مباشر من خلال الدردشة؛ العمليات تتطلب دائماً تأكيد الصيدلي في الواجهة.
-6. أجب باللغة العربية الفصحى الواضحة والمهنية، وبأسلوب دقيق ومختصر ومباشر.
+6. أجب باللغة العربية الفصحى الواضحة والمهنية، وبأسلوب دقيق ومباشر.
 
 سياق النظام الحالي والبيانات المتاحة:
 ${context ? JSON.stringify(context, null, 2) : 'لا توجد بيانات سياقية إضافية.'}`;
 
-      // Build conversation contents
+      // Build conversation contents preserving multi-turn history
       const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
 
       if (Array.isArray(history) && history.length > 0) {
-        for (const h of history.slice(-8)) {
+        for (const h of history.slice(-10)) {
           if (h && typeof h.text === 'string' && h.text.trim()) {
             contents.push({
               role: h.sender === 'user' ? 'user' : 'model',
@@ -205,7 +283,7 @@ ${context ? JSON.stringify(context, null, 2) : 'لا توجد بيانات سي�
           }
         }
       } else if (Array.isArray(messages) && messages.length > 1) {
-        for (const m of messages.slice(0, -1).slice(-8)) {
+        for (const m of messages.slice(0, -1).slice(-10)) {
           const t = String(m?.text || m?.content || '').trim();
           if (t) {
             contents.push({
@@ -222,17 +300,36 @@ ${context ? JSON.stringify(context, null, 2) : 'لا توجد بيانات سي�
         parts: [{ text: queryText.slice(0, 4000) }],
       });
 
-      console.log(`[AI Assistant] Processing request, model=${GEMINI_MODEL}`);
+      console.log(`[AI Assistant] Processing request, model=${activeModel}, role=${requestedRole || 'general'}`);
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents,
-        config: {
-          systemInstruction: systemPrompt,
-          temperature: 0.2,
-          maxOutputTokens: 1200,
-        },
-      });
+      let response;
+      try {
+        response = await ai.models.generateContent({
+          model: activeModel,
+          contents,
+          config: {
+            systemInstruction: systemPrompt,
+            temperature: activeModel === 'gemini-3.1-flash-lite' ? 0.1 : 0.2,
+            maxOutputTokens: activeModel === 'gemini-3.1-pro-preview' ? 2000 : 1200,
+          },
+        });
+      } catch (genErr: any) {
+        if ((genErr.status === 503 || genErr.status === 429 || genErr.message?.includes('503')) && activeModel !== 'gemini-3-flash-preview') {
+          console.log(`[AI Assistant] Model ${activeModel} busy (${genErr.status}), falling back to gemini-3-flash-preview`);
+          activeModel = 'gemini-3-flash-preview';
+          response = await ai.models.generateContent({
+            model: activeModel,
+            contents,
+            config: {
+              systemInstruction: systemPrompt,
+              temperature: 0.2,
+              maxOutputTokens: 1200,
+            },
+          });
+        } else {
+          throw genErr;
+        }
+      }
 
       const replyText = (response.text || '').trim();
       const latency = Date.now() - startTime;
@@ -244,12 +341,13 @@ ${context ? JSON.stringify(context, null, 2) : 'لا توجد بيانات سي�
         });
       }
 
-      console.log(`[AI Assistant] Response received successfully (${latency}ms)`);
+      console.log(`[AI Assistant] Response received successfully (${latency}ms) using ${activeModel}`);
 
       return res.json({
         text: replyText,
         provider: 'google-gemini',
-        model: GEMINI_MODEL,
+        model: activeModel,
+        role: requestedRole || 'general',
         latencyMs: latency,
       });
     } catch (err: any) {

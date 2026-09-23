@@ -1,4 +1,5 @@
 // Copilot Chat Tab Component for Smart Pharmacy Copilot (Phase 9)
+// Multi-turn Gemini Chatbot with Role-based System Instructions and Model Selection
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Bot,
@@ -11,12 +12,22 @@ import {
   Package,
   Layers,
   ShieldCheck,
-  ChevronLeft
+  ChevronLeft,
+  Stethoscope,
+  Boxes,
+  DollarSign,
+  Zap,
+  Copy,
+  Check,
+  Activity,
+  Cpu
 } from 'lucide-react';
 import {
   AssistantMessage,
   AssistantContext,
-  AmbiguityChoice
+  AmbiguityChoice,
+  ChatbotRole,
+  GeminiChatModel
 } from '../types';
 import { AssistantOrchestrator } from '../orchestrator/AssistantOrchestrator';
 import { GuideCard } from './GuideCard';
@@ -32,21 +43,145 @@ interface CopilotChatTabProps {
   onCloseModal: () => void;
 }
 
+interface RoleConfig {
+  id: ChatbotRole;
+  title: string;
+  shortTitle: string;
+  icon: React.ComponentType<{ className?: string }>;
+  recommendedModel: GeminiChatModel;
+  description: string;
+  colorClass: string;
+  badgeBg: string;
+  chips: string[];
+}
+
+const ROLES_CONFIG: Record<ChatbotRole, RoleConfig> = {
+  general: {
+    id: 'general',
+    title: 'المساعد الشامل للنظام',
+    shortTitle: 'شامل',
+    icon: Bot,
+    recommendedModel: 'gemini-3.5-flash',
+    description: 'مساعد عام لإدارة شاشات الصيدلية والاستفسارات التشغيلية والأدلة',
+    colorClass: 'text-indigo-700 border-indigo-200 bg-indigo-50/80',
+    badgeBg: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+    chips: ['كيف أعمل خصم في POS؟', 'مبيعات اليوم', 'رصيد الصندوق', 'كيف أضيف صنف جديد؟', 'النواقص']
+  },
+  clinical: {
+    id: 'clinical',
+    title: 'مستشار صيدلي سريري',
+    shortTitle: 'صيدلي سريري',
+    icon: Stethoscope,
+    recommendedModel: 'gemini-3.1-pro-preview',
+    description: 'تحليل سريري متعمق: التداخلات الدوائية، حساب الجرعات، والبدائل وموانع الاستعمال',
+    colorClass: 'text-emerald-700 border-emerald-200 bg-emerald-50/80',
+    badgeBg: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    chips: [
+      'فحص تعارض أسبرين مع وارفارين',
+      'بدائل أوجمنتين 1 جم المتوفرة',
+      'جرعة باراسيتامول شراب لطفل 15 كجم',
+      'موانع استعمال إيبوبروفين لمريض ربو أو قرحة'
+    ]
+  },
+  inventory: {
+    id: 'inventory',
+    title: 'مستشار إدارة المخزون',
+    shortTitle: 'مخزون وFEFO',
+    icon: Boxes,
+    recommendedModel: 'gemini-3.5-flash',
+    description: 'سياسة الصرف FEFO، تقليل هدر الصلاحيات، وإدارة التشغيلات ونقاط إعادة الطلب',
+    colorClass: 'text-amber-700 border-amber-200 bg-amber-50/80',
+    badgeBg: 'bg-amber-100 text-amber-800 border-amber-200',
+    chips: [
+      'كيف أطبق سياسة FEFO بصرامة؟',
+      'الأصناف قريبة الانتهاء',
+      'نصائح جرد المخزون ومعالجة الفروقات',
+      'كيف أحدد كمية إعادة الطلب المثالية؟'
+    ]
+  },
+  finance: {
+    id: 'finance',
+    title: 'المستشار المالي ومحاسب الصيدلية',
+    shortTitle: 'محاسبة ومالية',
+    icon: DollarSign,
+    recommendedModel: 'gemini-3.5-flash',
+    description: 'تدقيق حركات الصناديق، تكلفة المبيعات COGS، وهوامش الربح وديون العملاء',
+    colorClass: 'text-blue-700 border-blue-200 bg-blue-50/80',
+    badgeBg: 'bg-blue-100 text-blue-800 border-blue-200',
+    chips: [
+      'طريقة مطابقة وتدقيق رصيد الصندوق',
+      'كيفية حساب تكلفة المبيعات COGS؟',
+      'خطوات إقفال وردية الكاشير',
+      'متابعة مديونيات العملاء المتأخرة'
+    ]
+  },
+  fast: {
+    id: 'fast',
+    title: 'المساعد السريع لكاونتر البيع',
+    shortTitle: 'مساعد سريع',
+    icon: Zap,
+    recommendedModel: 'gemini-3.1-flash-lite',
+    description: 'إجابات فورية وموجزة جداً لضغط كاونتر المبيعات ونقطة البيع POS',
+    colorClass: 'text-purple-700 border-purple-200 bg-purple-50/80',
+    badgeBg: 'bg-purple-100 text-purple-800 border-purple-200',
+    chips: [
+      'جرعة بنادول الاعتيادية للبالغين',
+      'أفضل وقت لتناول دواء أوميبرازول',
+      'الفرق بين باراسيتامول وإيبوبروفين',
+      'هل يؤخذ المضاد الحيوي قبل أم بعد الأكل؟'
+    ]
+  }
+};
+
+const MODELS_CONFIG: Record<GeminiChatModel, { name: string; label: string; tag: string; icon: string }> = {
+  'gemini-3-flash-preview': {
+    name: 'gemini-3-flash-preview',
+    label: 'مستقر وسريع (Flash Preview)',
+    tag: '⚡ مستقر',
+    icon: '⚡'
+  },
+  'gemini-3.1-flash-lite': {
+    name: 'gemini-3.1-flash-lite',
+    label: 'فائق السرعة (Flash Lite)',
+    tag: '⚡ سريع',
+    icon: '⚡'
+  },
+  'gemini-3.5-flash': {
+    name: 'gemini-3.5-flash',
+    label: 'متوازن وعام (Flash 3.5)',
+    tag: '🎯 عام',
+    icon: '🎯'
+  },
+  'gemini-3.1-pro-preview': {
+    name: 'gemini-3.1-pro-preview',
+    label: 'تحليل معقد (Pro Preview)',
+    tag: '🧠 معقد',
+    icon: '🧠'
+  }
+};
+
 export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
   currentUser,
   currentScreen,
   onNavigate,
   onCloseModal
 }) => {
+  const [selectedRole, setSelectedRole] = useState<ChatbotRole>('general');
+  const [selectedModel, setSelectedModel] = useState<GeminiChatModel>('gemini-3-flash-preview');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   const [messages, setMessages] = useState<AssistantMessage[]>([
     {
       id: 'welcome-1',
       sender: 'assistant',
       timestamp: Date.now(),
-      text: `مرحباً بك دكتور ${currentUser.full_name || currentUser.username}. أنا مساعد الصيدلية الذكي (Smart Pharmacy Copilot).\n\nأفهم بنية التطبيق وصلاحياتك الحالية (${currentUser.role_id === 'admin' ? 'مدير النظام' : 'صيدلي'}). يمكنك سؤالي عن طريقة استخدام أي شاشة، أو الاستفسار عن الأرصدة والمخزون، أو تنفيذ عملياتك بأمان تحت تأكيدك المباشر.`,
-      responseType: 'TEXT'
+      text: `مرحباً بك دكتور ${currentUser.full_name || currentUser.username}. أنا مساعد الصيدلية الذكي (Smart Pharmacy Copilot).\n\nأفهم بنية التطبيق وصلاحياتك الحالية (${currentUser.role_id === 'admin' ? 'مدير النظام' : 'صيدلي'}). يمكنك سؤالي عن طريقة استخدام أي شاشة، أو الاستفسار عن الأرصدة والمخزون، أو التبديل بين الأدوار المتخصصة (سريري، مخزني، مالي، سريع) أعلاه للإجابة على استفساراتك بدقة.`,
+      responseType: 'TEXT',
+      role: 'general',
+      model: 'gemini-3-flash-preview'
     }
   ]);
+
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [aiStatus, setAiStatus] = useState<{
@@ -54,6 +189,7 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
     provider: string;
     model: string;
     reachable: boolean;
+    errorCode?: string;
     lastError: string | null;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -81,19 +217,12 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
     scrollToBottom();
   }, [messages, isProcessing]);
 
-  // Contextual chips based on the screen user is currently on
-  const getContextualChips = () => {
-    switch (currentScreen) {
-      case 'pos':
-        return ['كيف أعمل خصم؟', 'مبيعات اليوم', 'رصيد الصندوق', 'النواقص'];
-      case 'inventory':
-        return ['كيف أضيف صنف جديد؟', 'النواقص', 'الأصناف قريبة الانتهاء', 'كيف أعمل جرد؟'];
-      case 'purchases':
-        return ['كيف أسجل فاتورة مشتريات؟', 'رصيد الموردين', 'رصيد الصندوق'];
-      case 'more':
-        return ['رصيد الصندوق', 'سجل مصروف 2000 ريال صيانة', 'كيف أفتح أو أغلق الوردية؟'];
-      default:
-        return ['كيف أضيف صنف جديد؟', 'رصيد الصندوق', 'مبيعات اليوم', 'النواقص'];
+  const handleRoleSelect = (role: ChatbotRole) => {
+    setSelectedRole(role);
+    // Auto-switch to recommended model for the selected role
+    const config = ROLES_CONFIG[role];
+    if (config?.recommendedModel) {
+      setSelectedModel(config.recommendedModel);
     }
   };
 
@@ -133,14 +262,20 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
       id: 'user-' + Date.now(),
       sender: 'user',
       timestamp: Date.now(),
-      text: query
+      text: query,
+      role: selectedRole
     };
 
     setMessages((prev) => [...prev, userMsg]);
     setIsProcessing(true);
 
     try {
-      const response = await AssistantOrchestrator.processMessage(query, context, messages);
+      const response = await AssistantOrchestrator.processMessage(
+        query,
+        context,
+        messages,
+        { model: selectedModel, role: selectedRole }
+      );
       setMessages((prev) => [...prev, response]);
     } catch (err: any) {
       setMessages((prev) => [
@@ -151,6 +286,7 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
           timestamp: Date.now(),
           text: `عذراً، حدث خطأ أثناء معالجة الطلب: ${err.message}`,
           responseType: 'ERROR',
+          role: selectedRole,
           data: { errorReason: err.message, canRetry: true, originalQuery: query }
         }
       ]);
@@ -175,7 +311,6 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
   };
 
   const handleAmbiguitySelect = async (choice: AmbiguityChoice) => {
-    // If choice is for product stock, inquire about that product
     if (choice.params?.productName) {
       await handleSendMessage(`كم مخزون ${choice.params.productName}`);
     } else if (choice.params?.productId) {
@@ -189,46 +324,73 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
         id: 'welcome-reset',
         sender: 'assistant',
         timestamp: Date.now(),
-        text: 'تم مسح المحادثة. كيف يمكنني مساعدتك الآن؟',
-        responseType: 'TEXT'
+        text: `تم مسح المحادثة السابقة. دور المساعد الحالي: (${ROLES_CONFIG[selectedRole].title}). كيف يمكنني مساعدتك الآن؟`,
+        responseType: 'TEXT',
+        role: selectedRole,
+        model: selectedModel
       }
     ]);
   };
 
+  const copyToClipboard = (text: string, id: string) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 2000);
+      });
+    }
+  };
+
+  const activeRoleConfig = ROLES_CONFIG[selectedRole];
+
   return (
-    <div className="flex flex-col h-[520px] max-h-[70vh] text-slate-800">
-      {/* Copilot Header Context Bar */}
-      <div className="flex items-center justify-between px-3 py-2 bg-indigo-50/60 border-b border-indigo-100 rounded-xl mb-2 text-2xs">
+    <div className="flex flex-col h-[560px] max-h-[75vh] text-slate-800">
+      {/* Top Header: AI Provider Status + Screen Context */}
+      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border-b border-slate-200 rounded-t-xl text-2xs">
         <div className="flex items-center gap-2">
           <span className="flex h-2 w-2 relative">
-            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${aiStatus?.configured && aiStatus?.reachable ? 'bg-emerald-400' : 'bg-amber-400'} opacity-75`} />
-            <span className={`relative inline-flex rounded-full h-2 w-2 ${aiStatus?.configured && aiStatus?.reachable ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            <span
+              className={`animate-ping absolute inline-flex h-full w-full rounded-full ${
+                aiStatus?.configured && aiStatus?.reachable ? 'bg-emerald-400' : 'bg-amber-400'
+              } opacity-75`}
+            />
+            <span
+              className={`relative inline-flex rounded-full h-2 w-2 ${
+                aiStatus?.configured && aiStatus?.reachable ? 'bg-emerald-500' : 'bg-amber-500'
+              }`}
+            />
           </span>
-          <span className="font-bold text-indigo-950">
+          <span className="font-bold text-slate-800">
             {aiStatus?.configured
-              ? (aiStatus.reachable ? 'متصل بمزود Gemini الذكي' : 'مفتاح مزود AI غير صالح')
+              ? aiStatus.reachable
+                ? 'متصل بمزود Gemini الذكي'
+                : aiStatus.errorCode === 'AI_UNAUTHORIZED'
+                ? 'مفتاح مزود AI غير صالح'
+                : aiStatus.errorCode === 'AI_RATE_LIMITED'
+                ? 'تجاوز حد الاستخدام (Rate Limit)'
+                : 'مزود الذكاء غير متاح حالياً (ضغط على الخادم)'
               : 'مزود الذكاء غير مهيأ (Offline)'}
           </span>
           <span className="text-slate-300">|</span>
           <span className="text-slate-600">
-            السياق: <strong className="text-indigo-900">{getScreenDisplayName(currentScreen)}</strong>
+            الشاشة الحالية: <strong className="text-indigo-900">{getScreenDisplayName(currentScreen)}</strong>
           </span>
         </div>
 
         <button
           type="button"
           onClick={handleClearHistory}
-          className="text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors"
-          title="مسح المحادثة"
+          className="text-slate-400 hover:text-rose-600 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-200/60"
+          title="مسح سجل المحادثة بالكامل"
         >
           <RefreshCw className="w-3 h-3" />
-          <span>مسح</span>
+          <span>مسح المحادثة</span>
         </button>
       </div>
 
       {/* Unconfigured Provider Banner */}
       {aiStatus && !aiStatus.configured && (
-        <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-3 mb-2 text-xs">
+        <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-3 my-2 text-xs">
           <div className="flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div className="flex-1">
@@ -236,32 +398,122 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
                 المساعد الذكي غير مُهيأ بعد. يرجى إعداد مفتاح API الخاص بخدمة الذكاء الاصطناعي (GEMINI_API_KEY) في متغيرات بيئة الخادم.
               </p>
               <p className="text-amber-700 text-2xs mt-1 leading-relaxed">
-                الوظائف المحلية المدمجة وأدلة النظام والبحث السريع تعمل بالكامل، بينما تتطلب الاستشارات الذكية وتحليل صور الفواتير ضبط مفتاح <code className="bg-amber-100/70 px-1 py-0.5 rounded font-mono text-amber-950">GEMINI_API_KEY</code> في متغيرات بيئة الخادم.
+                الوظائف المحلية المدمجة وأدلة النظام والبحث السريع تعمل بالكامل، بينما تتطلب الاستشارات الذكية ضبط مفتاح <code className="bg-amber-100/70 px-1 py-0.5 rounded font-mono text-amber-950">GEMINI_API_KEY</code> في متغيرات بيئة الخادم.
               </p>
             </div>
           </div>
         </div>
       )}
 
+      {/* Role Selector Tabs */}
+      <div className="py-2 border-b border-slate-100 flex flex-col gap-1.5">
+        <div className="flex items-center justify-between px-1 text-2xs text-slate-500">
+          <span className="font-semibold flex items-center gap-1">
+            <Activity className="w-3 h-3 text-indigo-600" />
+            تحديد دور المساعد وتخصيص التعليمات:
+          </span>
+          {/* Model Selector Pill */}
+          <div className="flex items-center gap-1">
+            <Cpu className="w-3 h-3 text-slate-400" />
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value as GeminiChatModel)}
+              className="bg-white border border-slate-200 rounded px-1.5 py-0.5 text-2xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              title="اختيار نموذج Gemini المناسب لحجم وتعقيد المهمة"
+            >
+              <option value="gemini-3-flash-preview">⚡ gemini-3-flash-preview (مستقر وسريع)</option>
+              <option value="gemini-3.1-flash-lite">⚡ gemini-3.1-flash-lite (سريع)</option>
+              <option value="gemini-3.5-flash">🎯 gemini-3.5-flash (عام ومتوازن)</option>
+              <option value="gemini-3.1-pro-preview">🧠 gemini-3.1-pro-preview (معقد وسريري)</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          {(Object.keys(ROLES_CONFIG) as ChatbotRole[]).map((roleKey) => {
+            const r = ROLES_CONFIG[roleKey];
+            const Icon = r.icon;
+            const isSelected = selectedRole === roleKey;
+            return (
+              <button
+                key={roleKey}
+                type="button"
+                onClick={() => handleRoleSelect(roleKey)}
+                className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-2xs font-bold transition-all border ${
+                  isSelected
+                    ? `${r.colorClass} ring-2 ring-indigo-500/20 shadow-2xs`
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span>{r.shortTitle}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto space-y-3 px-1 pr-2 pb-2">
+      <div className="flex-1 overflow-y-auto space-y-3 px-1 pr-2 py-2">
         {messages.map((msg) => (
           <div
             key={msg.id}
             className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} transition-all`}
           >
             {msg.sender === 'user' ? (
-              <div className="bg-indigo-600 text-white font-medium text-xs px-3.5 py-2.5 rounded-2xl rounded-br-xs max-w-[85%] sm:max-w-[75%] shadow-xs">
+              <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-medium text-xs px-3.5 py-2.5 rounded-2xl rounded-br-xs max-w-[85%] sm:max-w-[75%] shadow-xs leading-relaxed">
                 {msg.text}
               </div>
             ) : (
               <div className="w-full max-w-[95%] space-y-2">
-                {/* Text Bubble */}
-                {msg.text && (
-                  <div className="bg-slate-100/90 text-slate-800 text-xs px-3.5 py-2.5 rounded-2xl rounded-bl-xs leading-relaxed border border-slate-200/60 whitespace-pre-line">
-                    {msg.text}
+                {/* Assistant Message Container */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl rounded-bl-xs p-3 shadow-2xs">
+                  {/* Message Meta Header: Role Badge + Model Tag + Copy Button */}
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 text-2xs">
+                    <div className="flex items-center gap-1.5">
+                      <span className="p-1 rounded-md bg-indigo-50 text-indigo-700">
+                        <Bot className="w-3.5 h-3.5" />
+                      </span>
+                      <span className="font-bold text-slate-800">
+                        {ROLES_CONFIG[(msg.role as ChatbotRole) || selectedRole]?.title || 'المساعد الذكي'}
+                      </span>
+                      {msg.model && (
+                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono text-[10px]">
+                          {msg.model}
+                        </span>
+                      )}
+                      {msg.latencyMs && (
+                        <span className="text-slate-400 text-[10px]">({msg.latencyMs}ms)</span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(msg.text, msg.id)}
+                      className="text-slate-400 hover:text-slate-700 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-100"
+                      title="نسخ نص الإجابة"
+                    >
+                      {copiedId === msg.id ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span className="text-emerald-600 text-[10px]">تم النسخ</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span className="text-[10px]">نسخ</span>
+                        </>
+                      )}
+                    </button>
                   </div>
-                )}
+
+                  {/* Text Content */}
+                  {msg.text && (
+                    <div className="text-slate-800 text-xs leading-relaxed whitespace-pre-line font-normal">
+                      {msg.text}
+                    </div>
+                  )}
+                </div>
 
                 {/* Structured Guide Card */}
                 {msg.responseType === 'GUIDE' && msg.data?.guide && (
@@ -390,16 +642,19 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
         {isProcessing && (
           <div className="flex items-center gap-2 text-indigo-700 text-2xs py-2 px-3 bg-indigo-50/80 border border-indigo-100 rounded-xl w-fit shadow-2xs animate-pulse">
             <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-spin" />
-            <span className="font-semibold">جاري التفكير والتواصل مع المساعد الصيدلاني الذكي...</span>
+            <span className="font-semibold">
+              جاري التفكير والتواصل مع {activeRoleConfig.title} ({MODELS_CONFIG[selectedModel].tag})...
+            </span>
           </div>
         )}
 
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Contextual Quick Prompt Chips */}
-      <div className="flex items-center gap-1.5 overflow-x-auto py-2 px-1 scrollbar-none">
-        {getContextualChips().map((chip, idx) => (
+      {/* Role Context Prompt Chips */}
+      <div className="flex items-center gap-1.5 overflow-x-auto py-1.5 px-1 scrollbar-none border-t border-slate-100">
+        <span className="text-[10px] text-slate-400 font-semibold shrink-0">مقترحات:</span>
+        {activeRoleConfig.chips.map((chip, idx) => (
           <button
             key={idx}
             type="button"
@@ -424,7 +679,7 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="اسأل المساعد أو اكتب طلباً (مثال: كيف أضيف صنف، ما رصيد الصندوق...)"
+            placeholder={`اسأل ${activeRoleConfig.title} أو اكتب استفسارك...`}
             className="flex-1 py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
           />
           <button

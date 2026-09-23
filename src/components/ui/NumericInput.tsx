@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cleanNumericDraft, parseSafeNumber, normalizeInputText } from '../../utils/inputSafety';
 
-interface NumericInputProps {
+export interface NumericInputProps {
   id?: string;
   value: number;
   onChange: (val: number) => void;
@@ -18,6 +18,15 @@ interface NumericInputProps {
   autoSelectOnFocus?: boolean;
 }
 
+/**
+ * Production-grade Numeric Input Component
+ * Solves:
+ * 1. Single character Backspace / Delete on Android Soft Keyboard & Desktop.
+ * 2. Arabic (٠-٩) and Persian (۰-۹) numeral normalization with exact 1-to-1 cursor alignment.
+ * 3. Partial / in-progress editing ("" empty input during editing != 0).
+ * 4. Mid-text cursor preservation without jumping to end.
+ * 5. Text range selection deletion (e.g. selecting "345" from "12345" + Backspace -> "12").
+ */
 export const NumericInput: React.FC<NumericInputProps> = ({
   id,
   value,
@@ -38,6 +47,7 @@ export const NumericInput: React.FC<NumericInputProps> = ({
   const [draft, setDraft] = useState<string>(() => (value === 0 ? '' : String(value)));
 
   const isEditingRef = useRef(false);
+  const isComposingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastCommittedNumRef = useRef<number>(value);
   const cursorPositionRef = useRef<number | null>(null);
@@ -58,11 +68,18 @@ export const NumericInput: React.FC<NumericInputProps> = ({
     }
   }, [value]);
 
-  // Restore cursor position after React re-renders when editing in the middle of text
+  // Restore cursor position ONLY when value was transformed (e.g. Arabic numeral conversion or sanitization)
   useLayoutEffect(() => {
     if (cursorPositionRef.current !== null && inputRef.current) {
-      const pos = Math.min(cursorPositionRef.current, inputRef.current.value.length);
-      inputRef.current.setSelectionRange(pos, pos);
+      if (typeof document !== 'undefined' && document.activeElement === inputRef.current) {
+        const targetPos = Math.min(cursorPositionRef.current, inputRef.current.value.length);
+        if (
+          inputRef.current.selectionStart !== targetPos ||
+          inputRef.current.selectionEnd !== targetPos
+        ) {
+          inputRef.current.setSelectionRange(targetPos, targetPos);
+        }
+      }
       cursorPositionRef.current = null;
     }
   });
@@ -79,15 +96,20 @@ export const NumericInput: React.FC<NumericInputProps> = ({
     const rawVal = event.target.value;
     const currentCursor = event.target.selectionStart;
 
-    // 1. Normalize Arabic and Persian numerals to ASCII digits (1-to-1 length mapping)
+    // 1. Normalize Arabic and Persian numerals to ASCII digits (1-to-1 character length mapping)
     const normalized = normalizeInputText(rawVal);
 
     // 2. Clean while preserving incomplete drafts during typing ("", "-", "0.", ".")
     const cleaned = cleanNumericDraft(normalized, allowDecimals);
     const finalDraft = allowNegative ? cleaned : cleaned.replace(/-/g, '');
 
-    // Track cursor position to prevent jumping to the end
-    cursorPositionRef.current = currentCursor;
+    // If final draft differs from rawVal (e.g. Arabic numerals converted or illegal chars stripped),
+    // we need to guide the cursor position. Otherwise, leave browser's native cursor untouched!
+    if (finalDraft !== rawVal) {
+      cursorPositionRef.current = currentCursor;
+    } else {
+      cursorPositionRef.current = null;
+    }
 
     // Update draft state (user can freely delete to empty string "")
     setDraft(finalDraft);
@@ -96,6 +118,16 @@ export const NumericInput: React.FC<NumericInputProps> = ({
     const parsed = parseSafeNumber(finalDraft, 0);
     lastCommittedNumRef.current = parsed;
     onChange(parsed);
+  };
+
+  const handleCompositionStart = () => {
+    isComposingRef.current = true;
+    isEditingRef.current = true;
+  };
+
+  const handleCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
+    isComposingRef.current = false;
+    handleChange(e as any);
   };
 
   const handleBlur = () => {
@@ -118,9 +150,10 @@ export const NumericInput: React.FC<NumericInputProps> = ({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    // Ensure standard Backspace & Delete behavior without interference
+    isEditingRef.current = true;
+    // Allow natural keyboard navigation & editing
     if (event.key === 'Backspace' || event.key === 'Delete') {
-      isEditingRef.current = true;
+      // Keep isEditing true
     }
   };
 
@@ -142,6 +175,8 @@ export const NumericInput: React.FC<NumericInputProps> = ({
         onChange={handleChange}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
+        onCompositionStart={handleCompositionStart}
+        onCompositionEnd={handleCompositionEnd}
         placeholder={placeholder}
         dir="ltr"
         className={`w-full px-3 py-2 text-left font-mono text-slate-800 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all placeholder:text-slate-300 disabled:bg-slate-50 disabled:text-slate-400 ${

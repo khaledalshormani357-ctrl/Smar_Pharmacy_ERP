@@ -211,12 +211,18 @@ export interface AmbiguityData {
   choices: AmbiguityChoice[];
 }
 
+export type GeminiChatModel = 'gemini-3-flash-preview' | 'gemini-3.5-flash' | 'gemini-3.1-flash-lite' | 'gemini-3.1-pro-preview';
+export type ChatbotRole = 'general' | 'clinical' | 'inventory' | 'finance' | 'fast';
+
 export interface AssistantMessage {
   id: string;
   sender: 'user' | 'assistant';
   timestamp: number;
   text: string;
   responseType?: AssistantResponseType;
+  model?: string;
+  role?: string;
+  latencyMs?: number;
   data?: {
     guide?: GuideResponseData;
     navigation?: NavigationResponseData;

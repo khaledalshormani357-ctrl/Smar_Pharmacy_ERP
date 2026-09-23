@@ -429,7 +429,10 @@ export class PdfService {
 
     drawTotalRow('المجموع الفرعي:', this.formatMoney(data.subtotal));
     if (data.discount_amount > 0) {
-      drawTotalRow('إجمالي الخصم:', this.formatMoney(data.discount_amount));
+      drawTotalRow('إجمالي الخصم:', `-${this.formatMoney(data.discount_amount)}`);
+    }
+    if (data.tax_amount > 0) {
+      drawTotalRow('الضريبة:', `+${this.formatMoney(data.tax_amount)}`);
     }
     drawTotalRow('صافي الفاتورة:', this.formatMoney(data.net_total), true);
     drawTotalRow('المبلغ المسدد:', this.formatMoney(data.paid_amount));
@@ -561,7 +564,23 @@ export class PdfService {
     y -= 15;
 
     // Totals
-    this.drawText(page, 'الإجمالي الصافي:', margin + 70, y, 9, font, rgb(0, 0, 0), { align: 'right', width: 80 });
+    this.drawText(page, 'الإجمالي الفرعي:', margin + 70, y, 8, font, rgb(0, 0, 0), { align: 'right', width: 80 });
+    this.drawText(page, this.formatMoney(data.subtotal), margin, y, 8, font, rgb(0, 0, 0), { align: 'left', width: 50 });
+    y -= 12;
+
+    if (data.discount_amount > 0) {
+      this.drawText(page, 'الخصم:', margin + 70, y, 8, font, rgb(0, 0, 0), { align: 'right', width: 80 });
+      this.drawText(page, `-${this.formatMoney(data.discount_amount)}`, margin, y, 8, font, rgb(0, 0, 0), { align: 'left', width: 50 });
+      y -= 12;
+    }
+
+    if (data.tax_amount > 0) {
+      this.drawText(page, 'الضريبة:', margin + 70, y, 8, font, rgb(0, 0, 0), { align: 'right', width: 80 });
+      this.drawText(page, `+${this.formatMoney(data.tax_amount)}`, margin, y, 8, font, rgb(0, 0, 0), { align: 'left', width: 50 });
+      y -= 12;
+    }
+
+    this.drawText(page, 'الإجمالي النهائي:', margin + 70, y, 9, font, rgb(0, 0, 0), { align: 'right', width: 80 });
     this.drawText(page, this.formatMoney(data.net_total), margin, y, 9, font, rgb(0, 0, 0), { align: 'left', width: 50 });
     y -= 14;
 

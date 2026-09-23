@@ -472,13 +472,27 @@ export class DocumentService {
           </tbody>
         </table>
         <table class="totals-table">
+          <tr>
+            <td>الإجمالي الفرعي:</td>
+            <td class="text-left font-mono">${Money.format(doc.subtotal)}</td>
+          </tr>
+          ${
+            doc.discount_amount > 0
+              ? `<tr><td>الخصم:</td><td class="text-left font-mono text-rose-600">-${Money.format(doc.discount_amount)}</td></tr>`
+              : ''
+          }
+          ${
+            doc.tax_amount > 0
+              ? `<tr><td>الضريبة:</td><td class="text-left font-mono">+${Money.format(doc.tax_amount)}</td></tr>`
+              : ''
+          }
           <tr class="grand-total">
-            <td>الصافي:</td>
-            <td class="text-left">${Money.format(doc.net_total)}</td>
+            <td>الإجمالي النهائي (الصافي):</td>
+            <td class="text-left font-mono">${Money.format(doc.net_total)}</td>
           </tr>
           ${
             doc.remaining_amount > 0
-              ? `<tr><td>المتبقي:</td><td class="text-left">${Money.format(doc.remaining_amount)}</td></tr>`
+              ? `<tr><td>المتبقي:</td><td class="text-left font-mono">${Money.format(doc.remaining_amount)}</td></tr>`
               : ''
           }
         </table>
