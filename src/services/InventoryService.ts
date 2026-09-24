@@ -82,7 +82,18 @@ export class InventoryService {
   // Create or Update Product with units
   static saveProduct(
     data: Partial<Product>,
-    units: { unitName: string; factor: number; price: number }[],
+    units: Array<{
+      id?: string;
+      unitName?: string;
+      unit_name?: string;
+      factor?: number;
+      conversion_factor?: number;
+      price?: number;
+      selling_price?: number;
+      purchase_price?: number;
+      is_default_sale?: boolean;
+      is_active?: boolean;
+    }>,
     userId = 'user-01'
   ): string {
     const isNew = !data.id;
@@ -106,6 +117,9 @@ export class InventoryService {
         name_en: data.name_en?.trim(),
         generic_name: data.generic_name?.trim(),
         active_ingredient: data.active_ingredient?.trim(),
+        strength: data.strength?.trim(),
+        country: data.country?.trim() || data.country_of_origin?.trim(),
+        description: data.description?.trim(),
         category_id: data.category_id,
         manufacturer_id: data.manufacturer_id,
         dosage_form: data.dosage_form || 'tablet',
@@ -117,7 +131,7 @@ export class InventoryService {
         reorder_level: data.reorder_level || 15,
         prescription_required: !!data.prescription_required,
         is_controlled: !!data.is_controlled,
-        is_active: true,
+        is_active: data.is_active !== undefined ? data.is_active : true,
         created_at: Date.now(),
         updated_at: Date.now()
       };
@@ -127,19 +141,46 @@ export class InventoryService {
       ProductRepository.update(productId, data, userId);
     }
 
-    // Save unit conversions
+    // Save unit conversions with lifecycle safety
+    const normalizedConversions = units.map((u) => ({
+      id: u.id,
+      unit_name: (u.unit_name || u.unitName || '').trim(),
+      conversion_factor: u.conversion_factor || u.factor || 1,
+      selling_price: u.selling_price !== undefined ? u.selling_price : (u.price || 0),
+      purchase_price: u.purchase_price,
+      is_default_sale: !!u.is_default_sale,
+      is_active: u.is_active !== undefined ? u.is_active : true
+    }));
+
     UnitConversionRepository.saveForProduct(
       productId,
       data.base_unit || 'حبة',
-      units.map((u) => ({
-        unit_name: u.unitName,
-        conversion_factor: u.factor,
-        selling_price: u.price
-      })),
-      userId
+      normalizedConversions,
+      userId,
+      data.current_selling_price || 0
     );
 
     return productId;
+  }
+
+  // Safe Delete or Archive Product
+  static deleteOrArchiveProduct(productId: string, userId = 'user-01') {
+    return ProductRepository.deleteOrArchive(productId, userId);
+  }
+
+  // Check product transaction history
+  static hasTransactionsOrStock(productId: string) {
+    return ProductRepository.hasTransactionsOrStock(productId);
+  }
+
+  // Check unit usage
+  static isUnitInUse(productId: string, unitName: string) {
+    return UnitConversionRepository.isUnitInUse(productId, unitName);
+  }
+
+  // Get product unit conversions
+  static getProductConversions(productId: string, includeInactive = false) {
+    return UnitConversionRepository.getByProduct(productId, includeInactive);
   }
 
   // Stock Adjustment delegation

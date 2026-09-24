@@ -14,13 +14,15 @@ import {
   Barcode,
   ShieldAlert,
   Flame,
-  CheckCircle2
+  CheckCircle2,
+  Edit
 } from 'lucide-react';
 import { Product, Batch, StockMovement, UnitConversion, Category, Manufacturer } from '../../types';
 import { Money } from '../../utils/money';
 import { BatchRepository, UnitConversionRepository, StockMovementRepository } from '../../db/repositories';
 import { StockService } from '../../services/StockService';
 import { BarcodeLabelModal } from './BarcodeLabelModal';
+import { ProductEditorModal } from '../modals/ProductEditorModal';
 
 interface ProductDetailsModalProps {
   product: Product;
@@ -41,6 +43,7 @@ export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'batches' | 'units' | 'movements'>('batches');
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedBatchForLabel, setSelectedBatchForLabel] = useState<Batch | undefined>(undefined);
   const [batchActionMsg, setBatchActionMsg] = useState<string | null>(null);
 
@@ -130,6 +133,13 @@ export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+            >
+              <Edit className="w-3.5 h-3.5 text-emerald-600" />
+              <span>تعديل الصنف والوحدات</span>
+            </button>
             <button
               onClick={() => {
                 setSelectedBatchForLabel(undefined);
@@ -366,7 +376,17 @@ export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
           {/* Units Tab */}
           {activeTab === 'units' && (
             <div className="space-y-3">
-              <span className="text-xs text-slate-500 font-semibold block">معاملات التحويل بين الوحدات (الوحدة الأساسية: {product.base_unit})</span>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500 font-semibold block">معاملات التحويل بين الوحدات (الوحدة الأساسية: {product.base_unit})</span>
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(true)}
+                  className="px-3 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors"
+                >
+                  <Edit className="w-3.5 h-3.5" />
+                  <span>تعديل الوحدات والأسعار</span>
+                </button>
+              </div>
               <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-slate-50 border-b border-slate-100 text-slate-500">
@@ -471,6 +491,18 @@ export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
           product={product}
           batch={selectedBatchForLabel}
           onClose={() => setShowBarcodeModal(false)}
+        />
+      )}
+
+      {showEditModal && (
+        <ProductEditorModal
+          isOpen={showEditModal}
+          onClose={() => setShowEditModal(false)}
+          product={product}
+          onArchived={() => {
+            setShowEditModal(false);
+            onClose();
+          }}
         />
       )}
     </div>

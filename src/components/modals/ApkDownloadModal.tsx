@@ -212,7 +212,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
         {/* Footer */}
         <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3 rounded-b-3xl shrink-0">
           <div className="text-[11px] text-slate-500">
-            الإصدار: <span className="font-mono font-bold text-slate-700">v1.0.0-android</span>
+            الإصدار: <span className="font-mono font-bold text-slate-700">v1.0.1 (Build 2)</span>
           </div>
           <button
             onClick={onClose}

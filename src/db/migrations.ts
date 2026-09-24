@@ -210,21 +210,55 @@ export class MigrationManager {
           }
         }
       }
+    },
+    {
+      version: 8,
+      name: '008_product_editor_and_unit_lifecycle',
+      up: (state) => {
+        // Ensure products have is_active, updated_at
+        if (Array.isArray(state.products)) {
+          for (const p of state.products) {
+            if (p.is_active === undefined) {
+              p.is_active = true;
+            }
+            if (!p.updated_at) {
+              p.updated_at = p.created_at || Date.now();
+            }
+          }
+        }
+        // Ensure unit_conversions have is_active
+        if (Array.isArray(state.unit_conversions)) {
+          for (const uc of state.unit_conversions) {
+            if (uc.is_active === undefined) {
+              uc.is_active = true;
+            }
+          }
+        }
+      }
     }
   ];
 
   static runMigrations(state: any): void {
+    if (!state) return;
     if (!state.schema_migrations) {
       state.schema_migrations = [];
+    }
+
+    // Requirement 02: Take pre-migration restore point snapshot
+    let snapshot: string | null = null;
+    try {
+      snapshot = JSON.stringify(state);
+    } catch (e) {
+      console.warn('Could not serialize snapshot before migrations', e);
     }
 
     const currentVersion = state.version || 0;
     const sorted = [...this.migrations].sort((a, b) => a.version - b.version);
 
-    for (const m of sorted) {
-      const alreadyApplied = state.schema_migrations.some((sm: any) => sm.version === m.version);
-      if (m.version > currentVersion || !alreadyApplied) {
-        try {
+    try {
+      for (const m of sorted) {
+        const alreadyApplied = state.schema_migrations.some((sm: any) => sm.version === m.version);
+        if (m.version > currentVersion || !alreadyApplied) {
           m.up(state);
           state.version = Math.max(state.version || 0, m.version);
           state.schema_migrations.push({
@@ -232,11 +266,39 @@ export class MigrationManager {
             name: m.name,
             applied_at: Date.now()
           });
-        } catch (err) {
-          console.error(`Migration ${m.name} failed:`, err);
-          throw new Error(`Migration ${m.name} failed: ${err}`);
         }
       }
+
+      // Validate critical tables to prevent data corruption during APK update
+      this.validateCriticalTables(state);
+    } catch (err) {
+      console.error('Migration runner failed, executing rollback to restore point:', err);
+      if (snapshot) {
+        try {
+          const restored = JSON.parse(snapshot);
+          Object.keys(state).forEach((k) => delete state[k]);
+          Object.assign(state, restored);
+          console.warn('Rolled back state to pre-migration restore point successfully.');
+        } catch (rbErr) {
+          console.error('Rollback failed:', rbErr);
+        }
+      }
+      throw new Error(`Migration Runner failed: ${err}`);
+    }
+  }
+
+  private static validateCriticalTables(state: any): void {
+    const criticalCollections = [
+      'products', 'batches', 'sales', 'sale_items', 'purchases', 'purchase_items',
+      'customers', 'suppliers', 'cashboxes', 'cash_transactions', 'users', 'audit_logs'
+    ];
+    for (const key of criticalCollections) {
+      if (!Array.isArray(state[key])) {
+        throw new Error(`Critical collection '${key}' is missing or corrupted after migration.`);
+      }
+    }
+    if (!state.profile || !state.profile.id) {
+      throw new Error('Pharmacy profile is missing or invalid after migration.');
     }
   }
 

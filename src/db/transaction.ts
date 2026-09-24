@@ -47,9 +47,9 @@ export class TransactionManager {
 
   // Enforce referential integrity (PRAGMA foreign_keys = ON equivalent)
   static verifyForeignKeys(state: any): void {
-    // Check products reference existing category
+    // Check products reference existing category (if specified)
     for (const p of state.products) {
-      if (!state.categories.some((c: any) => c.id === p.category_id)) {
+      if (p.category_id && !state.categories.some((c: any) => c.id === p.category_id)) {
         throw new TransactionError(`Foreign key violation: Product ${p.id} references invalid category ${p.category_id}`);
       }
     }

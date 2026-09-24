@@ -28,6 +28,7 @@ import { ProductDetailsModal } from './ProductDetailsModal';
 import { OpeningStockModal } from './OpeningStockModal';
 import { StockCountModal } from './StockCountModal';
 import { CatalogImportModal } from '../modals/CatalogImportModal';
+import { ProductEditorModal } from '../modals/ProductEditorModal';
 
 export const InventoryView: React.FC = () => {
   const [products, setProducts] = useState(InventoryService.getProductsWithStock());
@@ -36,8 +37,11 @@ export const InventoryView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'low' | 'reorder' | 'expiring' | 'expired'>('all');
+  const [showArchived, setShowArchived] = useState(false);
 
   // Modals state
+  const [showProductEditor, setShowProductEditor] = useState(false);
+  const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -114,6 +118,11 @@ export const InventoryView: React.FC = () => {
     const qArabic = normalizeArabicSearchText(rawQuery);
 
     return products.filter((p) => {
+      // Archive filter
+      if (!showArchived && (p.is_active === false || p.deleted_at)) {
+        return false;
+      }
+
       const matchesQuery =
         !rawQuery ||
         (p.name_ar && normalizeArabicSearchText(p.name_ar).includes(qArabic)) ||
@@ -132,14 +141,14 @@ export const InventoryView: React.FC = () => {
       if (filterType === 'expired') return p.isExpired;
       return true;
     });
-  }, [products, searchQuery, selectedCategoryFilter, filterType]);
+  }, [products, searchQuery, selectedCategoryFilter, filterType, showArchived]);
 
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 40;
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedCategoryFilter, filterType]);
+  }, [searchQuery, selectedCategoryFilter, filterType, showArchived]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
   const paginatedProducts = useMemo(() => {
@@ -148,26 +157,8 @@ export const InventoryView: React.FC = () => {
   }, [filteredProducts, currentPage, pageSize]);
 
   const handleOpenAdd = () => {
-    setSelectedProduct(null);
-    setNameAr('');
-    setNameEn('');
-    setBarcode('');
-    setInternalCode('MED-' + Math.floor(1000 + Math.random() * 9000));
-    setGenericName('');
-    setActiveIngredient('');
-    setCategoryId(categories[0]?.id || '');
-    setManufacturerId(manufacturers[0]?.id || '');
-    setDosageForm('tablet');
-    setBaseUnit('حبة');
-    setPackSize(1);
-    setPurchasePriceVal(1000);
-    setSellingPriceVal(1500);
-    setMinStockVal(10);
-    setReorderLevelVal(25);
-    setPrescriptionRequired(false);
-    setIsControlled(false);
-    setAdditionalUnits([{ unitName: 'شريط', factor: 10, price: 15000 }]);
-    setShowAddModal(true);
+    setProductToEdit(null);
+    setShowProductEditor(true);
   };
 
   const handleSaveProduct = (e: React.FormEvent) => {
@@ -381,6 +372,16 @@ export const InventoryView: React.FC = () => {
           >
             منتهية الصلاحية ({productCounts.expired})
           </button>
+
+          <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer whitespace-nowrap select-none transition-colors">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5"
+            />
+            <span>عرض الأصناف المؤرشفة</span>
+          </label>
         </div>
       </div>
 
@@ -396,12 +397,19 @@ export const InventoryView: React.FC = () => {
             {paginatedProducts.map((p) => (
               <div
                 key={p.id}
-                className="bg-white rounded-3xl p-4 border border-slate-200 shadow-xs flex flex-col gap-3 hover:border-slate-300 transition-all"
+                className={`bg-white rounded-3xl p-4 border shadow-xs flex flex-col gap-3 transition-all ${
+                  p.is_active === false ? 'border-amber-200 bg-amber-50/20 opacity-80' : 'border-slate-200 hover:border-slate-300'
+                }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="text-sm font-bold text-slate-900 truncate">{p.name_ar}</h4>
+                      {p.is_active === false && (
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-md">
+                          مؤرشف / معطل
+                        </span>
+                      )}
                       {p.isLowStock && (
                         <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-200 rounded-md">
                           نواقص
@@ -427,6 +435,18 @@ export const InventoryView: React.FC = () => {
 
                   {/* Quick Inspection & Action Buttons */}
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setProductToEdit(p);
+                        setShowProductEditor(true);
+                      }}
+                      className="px-2.5 py-1 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                      title="تعديل بيانات الصنف والوحدات والأسعار"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                      <span>تعديل</span>
+                    </button>
+
                     <button
                       onClick={() => {
                         setSelectedProduct(p);
@@ -944,6 +964,24 @@ export const InventoryView: React.FC = () => {
         onClose={() => setShowCatalogModal(false)}
         onImportComplete={loadData}
       />
+
+      {/* Product Editor Modal for Add and Edit */}
+      {showProductEditor && (
+        <ProductEditorModal
+          isOpen={showProductEditor}
+          onClose={() => {
+            setShowProductEditor(false);
+            setProductToEdit(null);
+          }}
+          product={productToEdit}
+          onSaved={() => {
+            loadData();
+          }}
+          onArchived={() => {
+            loadData();
+          }}
+        />
+      )}
     </div>
   );
 };

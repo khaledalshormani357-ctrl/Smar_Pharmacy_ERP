@@ -73,6 +73,10 @@ export interface Product {
   name_en?: string;
   generic_name?: string;
   active_ingredient?: string;
+  strength?: string;
+  country?: string;
+  country_of_origin?: string;
+  description?: string;
   category_id?: ID;
   manufacturer_id?: ID;
   dosage_form: DosageForm;
@@ -97,7 +101,9 @@ export interface UnitConversion {
   unit_name: string;      // e.g. 'علبة', 'شريط'
   conversion_factor: number; // how many base units (e.g. 10)
   selling_price: number;     // in minor units
+  purchase_price?: number;   // in minor units
   is_default_sale: boolean;
+  is_active?: boolean;
 }
 
 export interface Batch {

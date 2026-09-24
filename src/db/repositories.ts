@@ -29,6 +29,7 @@ import {
 } from '../types';
 import { DomainValidator } from './validation';
 import { AuditManager } from './audit';
+import { normalizeArabicSearchText } from '../utils/inputSafety';
 
 export class ProductRepository {
   static getAll(includeInactive = false): Product[] {
@@ -45,27 +46,130 @@ export class ProductRepository {
     return db.getState().products.find((p) => p.barcode === clean && !p.deleted_at);
   }
 
-  static search(term: string, categoryId?: string, manufacturerId?: string): Product[] {
-    const norm = term ? DomainValidator.normalizeArabic(term.toLowerCase().trim()) : '';
+  // Check if a product has any historical transactions, batches, or active stock
+  static hasTransactionsOrStock(productId: string): {
+    hasHistory: boolean;
+    reason?: string;
+    stockQty: number;
+    batchesCount: number;
+    salesCount: number;
+    purchasesCount: number;
+    movementsCount: number;
+  } {
     const state = db.getState();
-    const manufacturersMap = new Map(state.manufacturers.map((m) => [m.id, m.name_ar.toLowerCase()]));
+    const productBatches = state.batches.filter((b) => b.product_id === productId);
+    const stockQty = productBatches.reduce((acc, b) => acc + (b.current_quantity || 0), 0);
+    const batchesCount = productBatches.length;
 
-    return state.products.filter((p) => {
-      if (p.deleted_at) return false;
-      if (categoryId && p.category_id !== categoryId) return false;
-      if (manufacturerId && p.manufacturer_id !== manufacturerId) return false;
+    const salesCount = (state.sale_items || []).filter((si) => si.product_id === productId).length;
+    const purchasesCount = (state.purchase_items || []).filter((pi) => pi.product_id === productId).length;
+    const movementsCount = (state.stock_movements || []).filter((sm) => sm.product_id === productId).length;
 
-      if (!norm) return true;
+    if (stockQty > 0) {
+      return {
+        hasHistory: true,
+        reason: `يوجد رصيد مخزني حالي (${stockQty}) في الدفعات المسجلة.`,
+        stockQty,
+        batchesCount,
+        salesCount,
+        purchasesCount,
+        movementsCount
+      };
+    }
 
-      const nAr = DomainValidator.normalizeArabic(p.name_ar.toLowerCase());
+    if (salesCount > 0) {
+      return {
+        hasHistory: true,
+        reason: `يوجد ${salesCount} فواتير مبيعات مسجلة سابقة تحتوي هذا الصنف.`,
+        stockQty,
+        batchesCount,
+        salesCount,
+        purchasesCount,
+        movementsCount
+      };
+    }
+
+    if (purchasesCount > 0) {
+      return {
+        hasHistory: true,
+        reason: `يوجد ${purchasesCount} فواتير توريد ومشتريات مسجلة للصنف.`,
+        stockQty,
+        batchesCount,
+        salesCount,
+        purchasesCount,
+        movementsCount
+      };
+    }
+
+    if (movementsCount > 0) {
+      return {
+        hasHistory: true,
+        reason: `توجد ${movementsCount} حركات مخزنية مسجلة لهذا الصنف.`,
+        stockQty,
+        batchesCount,
+        salesCount,
+        purchasesCount,
+        movementsCount
+      };
+    }
+
+    if (batchesCount > 0) {
+      return {
+        hasHistory: true,
+        reason: `توجد ${batchesCount} تشغيلات سابقة مسجلة للصنف في النظام.`,
+        stockQty,
+        batchesCount,
+        salesCount,
+        purchasesCount,
+        movementsCount
+      };
+    }
+
+    return {
+      hasHistory: false,
+      stockQty,
+      batchesCount,
+      salesCount,
+      purchasesCount,
+      movementsCount
+    };
+  }
+
+  static search(
+    term: string,
+    categoryId?: string,
+    manufacturerId?: string,
+    options?: { includeInactive?: boolean; limit?: number }
+  ): Product[] {
+    const norm = term ? normalizeArabicSearchText(term) : '';
+    const state = db.getState();
+    const manufacturersMap = new Map(state.manufacturers.map((m) => [m.id, normalizeArabicSearchText(m.name_ar)]));
+    const limit = options?.limit || 100;
+    const includeInactive = !!options?.includeInactive;
+
+    const results: Product[] = [];
+
+    for (const p of state.products) {
+      if (p.deleted_at) continue;
+      if (!includeInactive && !p.is_active) continue;
+      if (categoryId && p.category_id !== categoryId) continue;
+      if (manufacturerId && p.manufacturer_id !== manufacturerId) continue;
+
+      if (!norm) {
+        results.push(p);
+        if (results.length >= limit) break;
+        continue;
+      }
+
+      const nAr = normalizeArabicSearchText(p.name_ar);
       const nEn = (p.name_en || '').toLowerCase();
-      const nGen = DomainValidator.normalizeArabic((p.generic_name || '').toLowerCase());
-      const nAct = DomainValidator.normalizeArabic((p.active_ingredient || '').toLowerCase());
+      const nGen = normalizeArabicSearchText(p.generic_name || '');
+      const nAct = normalizeArabicSearchText(p.active_ingredient || '');
       const nCode = (p.internal_code || '').toLowerCase();
       const nBar = (p.barcode || '').toLowerCase();
-      const nMan = p.manufacturer_id ? DomainValidator.normalizeArabic(manufacturersMap.get(p.manufacturer_id) || '') : '';
+      const nMan = p.manufacturer_id ? (manufacturersMap.get(p.manufacturer_id) || '') : '';
 
-      return (
+      if (
         nAr.includes(norm) ||
         nEn.includes(norm) ||
         nGen.includes(norm) ||
@@ -73,8 +177,13 @@ export class ProductRepository {
         nCode.includes(norm) ||
         nBar.includes(norm) ||
         nMan.includes(norm)
-      );
-    });
+      ) {
+        results.push(p);
+        if (results.length >= limit) break;
+      }
+    }
+
+    return results;
   }
 
   static insert(product: Product, userId = 'user-01'): void {
@@ -92,6 +201,7 @@ export class ProductRepository {
       state.products.push(product);
       state.audit_logs.push(
         AuditManager.createLog(userId, 'CREATE', 'product', product.id, state.profile.device_id, {
+          reason: `إضافة صنف دوائي جديد: ${product.name_ar}`,
           payloadAfter: product
         })
       );
@@ -100,15 +210,31 @@ export class ProductRepository {
 
   static update(id: string, updates: Partial<Product>, userId = 'user-01'): void {
     DomainValidator.validateProduct(updates, true);
+
+    const state = db.getState();
+    const existing = state.products.find((p) => p.id === id);
+    if (!existing) throw new Error('الصنف غير موجود.');
+
+    // Requirement 01, item 5: Prevent changing base_unit if historical transactions or stock exist
+    if (updates.base_unit && updates.base_unit.trim() !== existing.base_unit.trim()) {
+      const historyCheck = this.hasTransactionsOrStock(id);
+      if (historyCheck.hasHistory) {
+        throw new Error(
+          `لا يمكن تغيير الوحدة الأساسية (${existing.base_unit}) لوجود معاملات مسجلة للصنف: ${historyCheck.reason}. تغيير الوحدة الأساسية محظور للحفاظ على الأرصدة المحاسبية والتاريخية.`
+        );
+      }
+    }
+
+    // Barcode uniqueness check
     if (updates.barcode && updates.barcode.trim()) {
-      const existing = this.getByBarcode(updates.barcode);
-      if (existing && existing.id !== id) {
-        throw new Error(`الباركود (${updates.barcode}) مسجل مسبقاً لصنف آخر (${existing.name_ar}).`);
+      const cleanBarcode = updates.barcode.trim();
+      const duplicate = state.products.find((p) => p.barcode === cleanBarcode && p.id !== id && !p.deleted_at);
+      if (duplicate) {
+        throw new Error(`الباركود (${cleanBarcode}) مسجل مسبقاً لصنف آخر (${duplicate.name_ar}).`);
       }
     }
 
     db.transaction(() => {
-      const state = db.getState();
       const idx = state.products.findIndex((p) => p.id === id);
       if (idx === -1) throw new Error('الصنف غير موجود.');
 
@@ -119,8 +245,33 @@ export class ProductRepository {
         updated_at: Date.now()
       };
 
+      // Explicit Audit Logs for specific sensitive fields
+      if (updates.barcode !== undefined && updates.barcode !== before.barcode) {
+        state.audit_logs.push(
+          AuditManager.createLog(userId, 'BARCODE_CHANGED', 'product', id, state.profile.device_id, {
+            reason: `تغيير باركود الصنف ${existing.name_ar} من [${before.barcode || 'فارغ'}] إلى [${updates.barcode || 'فارغ'}]`,
+            payloadBefore: { barcode: before.barcode },
+            payloadAfter: { barcode: updates.barcode }
+          })
+        );
+      }
+
+      if (
+        updates.current_selling_price !== undefined &&
+        updates.current_selling_price !== before.current_selling_price
+      ) {
+        state.audit_logs.push(
+          AuditManager.createLog(userId, 'PRICE_CHANGED', 'product', id, state.profile.device_id, {
+            reason: `تغيير سعر بيع الصنف ${existing.name_ar} من [${before.current_selling_price}] إلى [${updates.current_selling_price}]`,
+            payloadBefore: { current_selling_price: before.current_selling_price },
+            payloadAfter: { current_selling_price: updates.current_selling_price }
+          })
+        );
+      }
+
       state.audit_logs.push(
         AuditManager.createLog(userId, 'UPDATE', 'product', id, state.profile.device_id, {
+          reason: `تعديل بيانات الصنف ${existing.name_ar}`,
           payloadBefore: before,
           payloadAfter: state.products[idx]
         })
@@ -128,21 +279,55 @@ export class ProductRepository {
     });
   }
 
+  // Requirement 01, item 9: Safe Delete or Archive
+  static deleteOrArchive(productId: string, userId = 'user-01'): { action: 'deleted' | 'archived'; message: string } {
+    const historyCheck = this.hasTransactionsOrStock(productId);
+    const state = db.getState();
+    const product = state.products.find((p) => p.id === productId);
+    if (!product) throw new Error('الصنف غير موجود.');
+
+    if (historyCheck.hasHistory) {
+      // Archive product (is_active = false) to protect audit and historical records
+      db.transaction(() => {
+        const before = { ...product };
+        product.is_active = false;
+        product.updated_at = Date.now();
+
+        state.audit_logs.push(
+          AuditManager.createLog(userId, 'PRODUCT_ARCHIVED', 'product', productId, state.profile.device_id, {
+            reason: `أرشفة وتعطيل الصنف (${product.name_ar}) لوجود معاملات تاريخية: ${historyCheck.reason}`,
+            payloadBefore: before,
+            payloadAfter: product
+          })
+        );
+      });
+      return {
+        action: 'archived',
+        message: `تم أرشفة وتعطيل الصنف (${product.name_ar}) بنجاح حفاظاً على صحة الفواتير والمعاملات التاريخية المسجلة.`
+      };
+    } else {
+      // Pristine unreferenced product: safe to hard delete
+      db.transaction(() => {
+        const before = { ...product };
+        state.products = state.products.filter((p) => p.id !== productId);
+        state.unit_conversions = state.unit_conversions.filter((uc) => uc.product_id !== productId);
+
+        state.audit_logs.push(
+          AuditManager.createLog(userId, 'PRODUCT_DELETED', 'product', productId, state.profile.device_id, {
+            reason: `حذف الصنف (${before.name_ar}) نهائياً لعدم وجود أي معاملات أو رصيد مرتبط به`,
+            payloadBefore: before
+          })
+        );
+      });
+      return {
+        action: 'deleted',
+        message: `تم حذف الصنف (${product.name_ar}) نهائياً لعدم وجود أي معاملات أو رصيد مرتبط به.`
+      };
+    }
+  }
+
   static deactivate(id: string, userId = 'user-01'): void {
-    db.transaction(() => {
-      const state = db.getState();
-      const product = state.products.find((p) => p.id === id);
-      if (!product) throw new Error('الصنف غير موجود.');
-
-      product.is_active = false;
-      product.updated_at = Date.now();
-
-      state.audit_logs.push(
-        AuditManager.createLog(userId, 'DEACTIVATE', 'product', id, state.profile.device_id, {
-          reason: 'تعطيل الصنف ' + product.name_ar
-        })
-      );
-    });
+    this.deleteOrArchive(id, userId);
   }
 
   static activate(id: string, userId = 'user-01'): void {
@@ -151,12 +336,15 @@ export class ProductRepository {
       const product = state.products.find((p) => p.id === id);
       if (!product) throw new Error('الصنف غير موجود.');
 
+      const before = { ...product };
       product.is_active = true;
       product.updated_at = Date.now();
 
       state.audit_logs.push(
         AuditManager.createLog(userId, 'ACTIVATE', 'product', id, state.profile.device_id, {
-          reason: 'تنشيط الصنف ' + product.name_ar
+          reason: 'إلغاء أرشفة وتنشيط الصنف ' + product.name_ar,
+          payloadBefore: before,
+          payloadAfter: product
         })
       );
     });
@@ -308,15 +496,66 @@ export class BatchRepository {
 }
 
 export class UnitConversionRepository {
-  static getByProduct(productId: string): UnitConversion[] {
-    return db.getState().unit_conversions.filter((uc) => uc.product_id === productId);
+  static getByProduct(productId: string, includeInactive = false): UnitConversion[] {
+    return db
+      .getState()
+      .unit_conversions.filter((uc) => uc.product_id === productId && (includeInactive ? true : uc.is_active !== false));
+  }
+
+  // Requirement 01, item 4: Check if unit is referenced in any historical transactions
+  static isUnitInUse(productId: string, unitName: string): {
+    inUse: boolean;
+    reason?: string;
+    salesCount: number;
+    purchasesCount: number;
+  } {
+    const cleanUnit = unitName.trim();
+    const state = db.getState();
+
+    const salesCount = (state.sale_items || []).filter(
+      (si) => si.product_id === productId && si.unit_name?.trim() === cleanUnit
+    ).length;
+
+    const purchasesCount = (state.purchase_items || []).filter(
+      (pi) => pi.product_id === productId && pi.unit_name?.trim() === cleanUnit
+    ).length;
+
+    const saleReturnsCount = (state.sale_return_items || []).filter(
+      (sri) => sri.product_id === productId && sri.unit_name?.trim() === cleanUnit
+    ).length;
+
+    const purchaseReturnsCount = (state.purchase_return_items || []).filter(
+      (pri) => pri.product_id === productId && pri.unit_name?.trim() === cleanUnit
+    ).length;
+
+    const totalUsage = salesCount + purchasesCount + saleReturnsCount + purchaseReturnsCount;
+
+    if (totalUsage > 0) {
+      return {
+        inUse: true,
+        reason: `الوحدة (${cleanUnit}) مستخدمة في (${salesCount} مبيعات، ${purchasesCount} مشتريات، ${saleReturnsCount + purchaseReturnsCount} مرتجعات).`,
+        salesCount,
+        purchasesCount
+      };
+    }
+
+    return { inUse: false, salesCount: 0, purchasesCount: 0 };
   }
 
   static saveForProduct(
     productId: string,
     baseUnit: string,
-    conversions: Array<{ unit_name: string; conversion_factor: number; selling_price: number; is_default_sale?: boolean }>,
-    userId = 'user-01'
+    conversions: Array<{
+      id?: string;
+      unit_name: string;
+      conversion_factor: number;
+      selling_price: number;
+      purchase_price?: number;
+      is_default_sale?: boolean;
+      is_active?: boolean;
+    }>,
+    userId = 'user-01',
+    baseSellingPrice = 0
   ): void {
     // Validate each conversion
     for (const c of conversions) {
@@ -325,38 +564,120 @@ export class UnitConversionRepository {
 
     db.transaction(() => {
       const state = db.getState();
-      state.unit_conversions = state.unit_conversions.filter((uc) => uc.product_id !== productId);
+      const existingConversions = state.unit_conversions.filter((uc) => uc.product_id === productId);
+      const incomingNames = new Set(conversions.map((c) => c.unit_name.trim()));
+      incomingNames.add(baseUnit.trim());
 
-      // Always add base unit 1:1
-      state.unit_conversions.push({
-        id: 'uc-' + Math.random().toString(36).substring(2, 9),
-        product_id: productId,
-        unit_name: baseUnit.trim(),
-        conversion_factor: 1,
-        selling_price: 0,
-        is_default_sale: conversions.length === 0
-      });
-
-      // Add other units
-      for (let i = 0; i < conversions.length; i++) {
-        const c = conversions[i];
-        if (c.unit_name.trim() !== baseUnit.trim()) {
-          state.unit_conversions.push({
-            id: 'uc-' + Math.random().toString(36).substring(2, 9),
-            product_id: productId,
-            unit_name: c.unit_name.trim(),
-            conversion_factor: c.conversion_factor,
-            selling_price: c.selling_price,
-            is_default_sale: !!c.is_default_sale
-          });
+      // 1. Process removed units: if in use -> archive (is_active = false); if not in use -> remove
+      for (const oldUc of existingConversions) {
+        if (!incomingNames.has(oldUc.unit_name.trim())) {
+          const usage = this.isUnitInUse(productId, oldUc.unit_name);
+          if (usage.inUse) {
+            // Keep unit in database marked as archived to preserve historical invoice snapshots
+            oldUc.is_active = false;
+            state.audit_logs.push(
+              AuditManager.createLog(userId, 'UNIT_ARCHIVED', 'unit_conversion', oldUc.id, state.profile.device_id, {
+                reason: `أرشفة وحدة البيع (${oldUc.unit_name}) لوجود حركات تاريخية: ${usage.reason}`,
+                payloadBefore: oldUc,
+                payloadAfter: { ...oldUc, is_active: false }
+              })
+            );
+          } else {
+            // Safe to completely delete unreferenced unit
+            state.unit_conversions = state.unit_conversions.filter((uc) => uc.id !== oldUc.id);
+            state.audit_logs.push(
+              AuditManager.createLog(userId, 'UNIT_DELETED', 'unit_conversion', oldUc.id, state.profile.device_id, {
+                reason: `حذف وحدة البيع غير المستخدمة (${oldUc.unit_name}) نهائياً`
+              })
+            );
+          }
         }
       }
 
-      state.audit_logs.push(
-        AuditManager.createLog(userId, 'UPDATE_UNITS', 'unit_conversion', productId, state.profile.device_id, {
-          reason: `تحديث وحدات القياس للصنف ${productId}`
-        })
+      // 2. Ensure base unit conversion 1:1 is always present and active
+      let baseUc = state.unit_conversions.find(
+        (uc) => uc.product_id === productId && uc.unit_name.trim() === baseUnit.trim()
       );
+      if (!baseUc) {
+        baseUc = {
+          id: 'uc-base-' + Math.random().toString(36).substring(2, 9),
+          product_id: productId,
+          unit_name: baseUnit.trim(),
+          conversion_factor: 1,
+          selling_price: baseSellingPrice,
+          is_default_sale: conversions.length === 0,
+          is_active: true
+        };
+        state.unit_conversions.push(baseUc);
+      } else {
+        baseUc.conversion_factor = 1;
+        baseUc.is_active = true;
+        if (baseSellingPrice > 0 && baseUc.selling_price === 0) {
+          baseUc.selling_price = baseSellingPrice;
+        }
+      }
+
+      // 3. Process incoming selling units
+      for (const c of conversions) {
+        if (c.unit_name.trim() === baseUnit.trim()) continue; // Handled base unit above
+
+        const cleanName = c.unit_name.trim();
+        const existing = state.unit_conversions.find(
+          (uc) => uc.product_id === productId && uc.unit_name.trim() === cleanName
+        );
+
+        if (existing) {
+          const before = { ...existing };
+          const priceChanged = existing.selling_price !== c.selling_price;
+          const factorChanged = existing.conversion_factor !== c.conversion_factor;
+
+          existing.conversion_factor = c.conversion_factor;
+          existing.selling_price = c.selling_price;
+          existing.purchase_price = c.purchase_price;
+          existing.is_default_sale = !!c.is_default_sale;
+          existing.is_active = c.is_active !== undefined ? c.is_active : true;
+
+          if (priceChanged) {
+            state.audit_logs.push(
+              AuditManager.createLog(userId, 'UNIT_PRICE_CHANGED', 'unit_conversion', existing.id, state.profile.device_id, {
+                reason: `تغيير سعر وحدة (${cleanName}) للصنف ${productId} من [${before.selling_price}] إلى [${c.selling_price}]`,
+                payloadBefore: before,
+                payloadAfter: existing
+              })
+            );
+          }
+
+          if (factorChanged) {
+            state.audit_logs.push(
+              AuditManager.createLog(userId, 'UNIT_FACTOR_CHANGED', 'unit_conversion', existing.id, state.profile.device_id, {
+                reason: `تعديل معامل تحويل الوحدة (${cleanName}) للصنف ${productId} إلى ${c.conversion_factor}`,
+                payloadBefore: before,
+                payloadAfter: existing
+              })
+            );
+          }
+        } else {
+          // New unit added
+          const newUc: UnitConversion = {
+            id: c.id || 'uc-' + Math.random().toString(36).substring(2, 9),
+            product_id: productId,
+            unit_name: cleanName,
+            conversion_factor: c.conversion_factor,
+            selling_price: c.selling_price,
+            purchase_price: c.purchase_price,
+            is_default_sale: !!c.is_default_sale,
+            is_active: true
+          };
+          state.unit_conversions.push(newUc);
+
+          state.audit_logs.push(
+            AuditManager.createLog(userId, 'UNIT_ADDED', 'unit_conversion', newUc.id, state.profile.device_id, {
+              reason: `إضافة وحدة بيع جديدة (${cleanName}) بمعامل تحويل (${c.conversion_factor}) وسعر (${c.selling_price})`,
+              payloadAfter: newUc
+            })
+          );
+        }
+      }
     });
   }
 }
