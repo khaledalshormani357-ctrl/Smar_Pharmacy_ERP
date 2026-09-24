@@ -41,6 +41,7 @@ interface CopilotChatTabProps {
   currentScreen: string;
   onNavigate: (screen: string, section?: string) => void;
   onCloseModal: () => void;
+  onOpenMoreTools?: () => void;
 }
 
 interface RoleConfig {
@@ -164,7 +165,8 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
   currentUser,
   currentScreen,
   onNavigate,
-  onCloseModal
+  onCloseModal,
+  onOpenMoreTools
 }) => {
   const [selectedRole, setSelectedRole] = useState<ChatbotRole>('general');
   const [selectedModel, setSelectedModel] = useState<GeminiChatModel>('gemini-3-flash-preview');
@@ -344,11 +346,11 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
   const activeRoleConfig = ROLES_CONFIG[selectedRole];
 
   return (
-    <div className="flex flex-col h-[560px] max-h-[75vh] text-slate-800">
-      {/* Top Header: AI Provider Status + Screen Context */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border-b border-slate-200 rounded-t-xl text-2xs">
-        <div className="flex items-center gap-2">
-          <span className="flex h-2 w-2 relative">
+    <div className="flex flex-col flex-1 min-h-0 w-full overflow-hidden text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900">
+      {/* Top Compact Header: AI Status + Role Switcher + Model + Clear History */}
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-2xs shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="flex h-2 w-2 relative shrink-0">
             <span
               className={`animate-ping absolute inline-flex h-full w-full rounded-full ${
                 aiStatus?.configured && aiStatus?.reachable ? 'bg-emerald-400' : 'bg-amber-400'
@@ -360,101 +362,44 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
               }`}
             />
           </span>
-          <span className="font-bold text-slate-800">
-            {aiStatus?.configured
-              ? aiStatus.reachable
-                ? 'متصل بمزود Gemini الذكي'
-                : aiStatus.errorCode === 'AI_UNAUTHORIZED'
-                ? 'مفتاح مزود AI غير صالح'
-                : aiStatus.errorCode === 'AI_RATE_LIMITED'
-                ? 'تجاوز حد الاستخدام (Rate Limit)'
-                : 'مزود الذكاء غير متاح حالياً (ضغط على الخادم)'
-              : 'مزود الذكاء غير مهيأ (Offline)'}
+          <span className="font-bold text-slate-700 dark:text-slate-300 truncate">
+            {activeRoleConfig.title}
           </span>
-          <span className="text-slate-300">|</span>
-          <span className="text-slate-600">
-            الشاشة الحالية: <strong className="text-indigo-900">{getScreenDisplayName(currentScreen)}</strong>
-          </span>
+          <span className="text-slate-300 dark:text-slate-700">|</span>
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value as GeminiChatModel)}
+            className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 focus:outline-none"
+            title="اختيار نموذج Gemini"
+          >
+            <option value="gemini-3-flash-preview">⚡ Flash (سريع)</option>
+            <option value="gemini-3.1-flash-lite">⚡ Flash-Lite</option>
+            <option value="gemini-3.5-flash">🎯 Flash 3.5</option>
+            <option value="gemini-3.1-pro-preview">🧠 Pro (سريري)</option>
+          </select>
         </div>
 
         <button
           type="button"
           onClick={handleClearHistory}
-          className="text-slate-400 hover:text-rose-600 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-200/60"
-          title="مسح سجل المحادثة بالكامل"
+          className="text-slate-400 hover:text-rose-600 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 shrink-0"
+          title="مسح سجل المحادثة"
         >
           <RefreshCw className="w-3 h-3" />
-          <span>مسح المحادثة</span>
+          <span className="hidden sm:inline">مسح</span>
         </button>
       </div>
 
-      {/* Unconfigured Provider Banner */}
+      {/* Unconfigured Provider Notice Banner */}
       {aiStatus && !aiStatus.configured && (
-        <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-3 my-2 text-xs">
-          <div className="flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="font-bold text-amber-900 leading-snug">
-                المساعد الذكي غير مُهيأ بعد. يرجى إعداد مفتاح API الخاص بخدمة الذكاء الاصطناعي (GEMINI_API_KEY) في متغيرات بيئة الخادم.
-              </p>
-              <p className="text-amber-700 text-2xs mt-1 leading-relaxed">
-                الوظائف المحلية المدمجة وأدلة النظام والبحث السريع تعمل بالكامل، بينما تتطلب الاستشارات الذكية ضبط مفتاح <code className="bg-amber-100/70 px-1 py-0.5 rounded font-mono text-amber-950">GEMINI_API_KEY</code> في متغيرات بيئة الخادم.
-              </p>
-            </div>
-          </div>
+        <div className="bg-amber-50/90 dark:bg-amber-950/40 border-b border-amber-200/80 dark:border-amber-900/60 px-3 py-1.5 text-2xs text-amber-900 dark:text-amber-200 flex items-center gap-2 shrink-0">
+          <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+          <span className="truncate">المساعد الذكي غير مُهيأ بعد للذكاء السحابي (GEMINI_API_KEY). يعمل حالياً بالوضع المحلي وقواعد البيانات.</span>
         </div>
       )}
 
-      {/* Role Selector Tabs */}
-      <div className="py-2 border-b border-slate-100 flex flex-col gap-1.5">
-        <div className="flex items-center justify-between px-1 text-2xs text-slate-500">
-          <span className="font-semibold flex items-center gap-1">
-            <Activity className="w-3 h-3 text-indigo-600" />
-            تحديد دور المساعد وتخصيص التعليمات:
-          </span>
-          {/* Model Selector Pill */}
-          <div className="flex items-center gap-1">
-            <Cpu className="w-3 h-3 text-slate-400" />
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value as GeminiChatModel)}
-              className="bg-white border border-slate-200 rounded px-1.5 py-0.5 text-2xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              title="اختيار نموذج Gemini المناسب لحجم وتعقيد المهمة"
-            >
-              <option value="gemini-3-flash-preview">⚡ gemini-3-flash-preview (مستقر وسريع)</option>
-              <option value="gemini-3.1-flash-lite">⚡ gemini-3.1-flash-lite (سريع)</option>
-              <option value="gemini-3.5-flash">🎯 gemini-3.5-flash (عام ومتوازن)</option>
-              <option value="gemini-3.1-pro-preview">🧠 gemini-3.1-pro-preview (معقد وسريري)</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          {(Object.keys(ROLES_CONFIG) as ChatbotRole[]).map((roleKey) => {
-            const r = ROLES_CONFIG[roleKey];
-            const Icon = r.icon;
-            const isSelected = selectedRole === roleKey;
-            return (
-              <button
-                key={roleKey}
-                type="button"
-                onClick={() => handleRoleSelect(roleKey)}
-                className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-2xs font-bold transition-all border ${
-                  isSelected
-                    ? `${r.colorClass} ring-2 ring-indigo-500/20 shadow-2xs`
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5 shrink-0" />
-                <span>{r.shortTitle}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto space-y-3 px-1 pr-2 py-2">
+      {/* Response Scroll Area: Absolute Priority (flex: 1; min-height: 0; overflow-y: auto) */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-3 px-3 py-3 scrollbar-thin">
         {messages.map((msg) => (
           <div
             key={msg.id}
@@ -651,23 +596,76 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Role Context Prompt Chips */}
-      <div className="flex items-center gap-1.5 overflow-x-auto py-1.5 px-1 scrollbar-none border-t border-slate-100">
-        <span className="text-[10px] text-slate-400 font-semibold shrink-0">مقترحات:</span>
-        {activeRoleConfig.chips.map((chip, idx) => (
+      {/* Android-First Quick Actions Bar (Core 6 + More) */}
+      <div className="flex items-center gap-1.5 overflow-x-auto py-2 px-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850 scrollbar-none shrink-0">
+        <button
+          type="button"
+          onClick={() => handleSendMessage('ابحث عن دواء في الصيدلية')}
+          className="shrink-0 text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shadow-2xs flex items-center gap-1"
+        >
+          <span>🔎</span>
+          <span>بحث عن دواء</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSendMessage('ما هي معلومات الصنف والجرعات المعتادة؟')}
+          className="shrink-0 text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shadow-2xs flex items-center gap-1"
+        >
+          <span>💊</span>
+          <span>معلومات الصنف</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSendMessage('ما هي الأصناف التي أوشكت على النفاد في المخزون؟')}
+          className="shrink-0 text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-slate-700 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shadow-2xs flex items-center gap-1"
+        >
+          <span>📦</span>
+          <span>نقص المخزون</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSendMessage('اقترح بدائل للأدوية الشائعة الناقصة')}
+          className="shrink-0 text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-slate-700 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shadow-2xs flex items-center gap-1"
+        >
+          <span>🔄</span>
+          <span>بدائل / أصناف مشابهة</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSendMessage('استعلم عن آخر فواتير المبيعات المسجلة اليوم')}
+          className="shrink-0 text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-slate-700 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shadow-2xs flex items-center gap-1"
+        >
+          <span>🧾</span>
+          <span>استعلام فاتورة</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSendMessage('تقرير استعلام سريع عن إجمالي المخزون والأرصدة')}
+          className="shrink-0 text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-slate-700 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-800/80 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shadow-2xs flex items-center gap-1"
+        >
+          <span>📊</span>
+          <span>استعلام مخزون</span>
+        </button>
+
+        {onOpenMoreTools && (
           <button
-            key={idx}
             type="button"
-            onClick={() => handleSendMessage(chip)}
-            className="shrink-0 text-2xs font-bold bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200/80 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shadow-2xs"
+            onClick={onOpenMoreTools}
+            className="shrink-0 text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-800 dark:text-indigo-200 border border-indigo-300/80 dark:border-indigo-700 px-3 py-1.5 rounded-full transition-all active:scale-95 shadow-2xs flex items-center gap-1"
           >
-            {chip}
+            <span>✨</span>
+            <span>المزيد...</span>
           </button>
-        ))}
+        )}
       </div>
 
       {/* Input Bar */}
-      <div className="pt-2 border-t border-slate-100">
+      <div className="p-2.5 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -680,12 +678,12 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder={`اسأل ${activeRoleConfig.title} أو اكتب استفسارك...`}
-            className="flex-1 py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+            className="flex-1 py-2 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-slate-900 transition-all"
           />
           <button
             type="submit"
             disabled={!inputText.trim() || isProcessing}
-            className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-95 disabled:opacity-40 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all"
+            className="py-2 px-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 disabled:opacity-40 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all shrink-0"
           >
             <span>إرسال</span>
             <Send className="w-3.5 h-3.5 rotate-180" />

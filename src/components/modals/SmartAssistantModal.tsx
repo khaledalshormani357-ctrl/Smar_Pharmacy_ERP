@@ -1,25 +1,31 @@
-// Smart Pharmacy Copilot & Clinical Assistant Modal (Phase 9)
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
+  ArrowRight,
   X,
   Bot,
   Sparkles,
-  AlertTriangle,
   Pill,
   Search,
   Calculator,
   ScanLine,
-  MessageSquareCode
+  MessageSquareCode,
+  MoreVertical,
+  ShieldCheck,
+  ChevronLeft,
+  Activity,
+  Layers
 } from 'lucide-react';
 import { db } from '../../db/sqlite';
 import { Money } from '../../utils/money';
 import { User } from '../../types';
 import { InvoiceScannerTab } from './InvoiceScannerTab';
 import { CopilotChatTab } from '../../assistant/ui/CopilotChatTab';
+import { NumericInput } from '../ui/NumericInput';
+import { useBackHandler } from '../../hooks/useBackHandler';
 
 interface SmartAssistantModalProps {
   onClose: () => void;
-  initialTab?: 'copilot' | 'invoice_scanner' | 'alternatives' | 'interactions' | 'dose';
+  initialTab?: 'copilot' | 'invoice_scanner' | 'clinical';
   currentUser?: User;
   currentScreen?: string;
   onNavigate?: (screen: string, section?: string) => void;
@@ -35,19 +41,16 @@ export const SmartAssistantModal: React.FC<SmartAssistantModalProps> = ({
   const activeUser = currentUser || db.getState().users[0];
   const products = db.getState().products;
 
-  const [mainTab, setMainTab] = useState<'copilot' | 'invoice_scanner' | 'clinical'>(
-    initialTab === 'invoice_scanner'
-      ? 'invoice_scanner'
-      : initialTab === 'copilot'
-      ? 'copilot'
-      : 'clinical'
+  // Navigation within Assistant: 'copilot' is default and response-first
+  const [activeView, setActiveView] = useState<'copilot' | 'scanner' | 'clinical'>(
+    initialTab === 'invoice_scanner' ? 'scanner' : initialTab === 'clinical' ? 'clinical' : 'copilot'
   );
 
-  const [clinicalSubTab, setClinicalSubTab] = useState<'alternatives' | 'interactions' | 'dose'>(
-    initialTab === 'alternatives' || initialTab === 'interactions' || initialTab === 'dose'
-      ? initialTab
-      : 'alternatives'
-  );
+  // More Tools Bottom Sheet Drawer
+  const [showToolsDrawer, setShowToolsDrawer] = useState(false);
+
+  // Clinical Sub-tabs
+  const [clinicalTab, setClinicalTab] = useState<'alternatives' | 'interactions' | 'dose'>('alternatives');
 
   // Alternatives search
   const [searchDrug, setSearchDrug] = useState('');
@@ -58,14 +61,41 @@ export const SmartAssistantModal: React.FC<SmartAssistantModalProps> = ({
   const [drug2, setDrug2] = useState(products[1]?.name_ar || '');
   const [interactionResult, setInteractionResult] = useState<string | null>(null);
 
-  // Dose state
+  // Pediatric dose state
   const [weightKg, setWeightKg] = useState<number>(15);
   const [selectedMed, setSelectedMed] = useState<'paracetamol' | 'amoxicillin' | 'ibuprofen'>('paracetamol');
 
-  const filteredDrugs = products.filter((p) => {
-    const q = searchDrug.toLowerCase();
-    return p.name_ar.toLowerCase().includes(q) || (p.name_en && p.name_en.toLowerCase().includes(q));
+  // Handle Android Hardware Back Button: close drawer first, then close modal
+  useBackHandler('assistant-tools-drawer', showToolsDrawer, () => {
+    setShowToolsDrawer(false);
+    return true;
   });
+  useBackHandler('smart-assistant-modal', !showToolsDrawer, () => {
+    onClose();
+    return true;
+  });
+
+  // Mobile Keyboard & VisualViewport awareness
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+
+    const handleResize = () => {
+      if (window.visualViewport) {
+        setViewportHeight(window.visualViewport.height);
+      }
+    };
+
+    window.visualViewport.addEventListener('resize', handleResize);
+    window.visualViewport.addEventListener('scroll', handleResize);
+    handleResize();
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleResize);
+      window.visualViewport?.removeEventListener('scroll', handleResize);
+    };
+  }, []);
 
   const alternatives = selectedDrug
     ? products.filter(
@@ -122,116 +152,128 @@ export const SmartAssistantModal: React.FC<SmartAssistantModalProps> = ({
 
   const pediatricCalc = calculatePediatricDose();
 
+  const containerStyle = viewportHeight
+    ? { height: `${viewportHeight}px`, maxHeight: `${viewportHeight}px` }
+    : undefined;
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-      <div className="bg-white rounded-3xl p-4 sm:p-5 max-w-4xl w-full shadow-2xl space-y-3.5 max-h-[94vh] overflow-y-auto border border-slate-100 animate-in fade-in zoom-in-95">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-xs">
-              <Bot className="w-6 h-6" />
+    <div
+      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center sm:p-4"
+      dir="rtl"
+    >
+      <div
+        style={containerStyle}
+        className="bg-white dark:bg-slate-900 w-full sm:max-w-2xl sm:rounded-3xl shadow-2xl flex flex-col h-[100dvh] sm:h-[85vh] sm:max-h-[720px] border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-200"
+      >
+        {/* Android-First Header: Back / Title / More Tools Menu */}
+        <div className="flex items-center justify-between px-3.5 py-3 border-b border-slate-100 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {activeView !== 'copilot' ? (
+              <button
+                type="button"
+                onClick={() => setActiveView('copilot')}
+                className="p-1.5 -mr-1 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="الرجوع إلى المساعد"
+              >
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 -mr-1 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="إغلاق"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 shadow-2xs">
+              <Bot className="w-4.5 h-4.5" />
             </div>
-            <div>
-              <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-1.5">
-                مساعد الصيدلية الذكي (Smart Pharmacy Copilot)
-                <Sparkles className="w-4 h-4 text-amber-500" />
+
+            <div className="min-w-0">
+              <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate flex items-center gap-1.5">
+                {activeView === 'scanner'
+                  ? 'فاحص الفواتير الذكي (OCR)'
+                  : activeView === 'clinical'
+                  ? 'الأدوات السريرية والبدائل'
+                  : 'مساعد الصيدلية الذكي'}
+                <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
               </h3>
-              <p className="text-2xs sm:text-xs text-slate-500">
-                دليل الاستخدام التفاعلي، مساعد العمليات، فاحص الفواتير، والحسابات السريرية
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                {activeView === 'copilot'
+                  ? 'استعلامات الأدوية، الفواتير، المخزون والدعم التشغيلي'
+                  : 'أدوات الصيدلية المتقدمة'}
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          {/* Quick Switcher / Drawer Trigger */}
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowToolsDrawer((prev) => !prev)}
+              className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1 text-xs font-bold"
+              title="خيارات وأدوات المساعد"
+            >
+              <MoreVertical className="w-4.5 h-4.5" />
+            </button>
+          </div>
         </div>
 
-        {/* Primary Tabs */}
-        <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-2xl text-xs font-bold">
-          <button
-            type="button"
-            onClick={() => setMainTab('copilot')}
-            className={`py-2 px-1 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              mainTab === 'copilot' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <MessageSquareCode className="w-4 h-4 text-indigo-600 shrink-0" />
-            <span className="truncate">المساعد والمحادثة</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setMainTab('invoice_scanner')}
-            className={`py-2 px-1 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              mainTab === 'invoice_scanner' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <ScanLine className="w-4 h-4 text-indigo-600 shrink-0" />
-            <span className="truncate">فاحص الفواتير (OCR)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setMainTab('clinical')}
-            className={`py-2 px-1 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              mainTab === 'clinical' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Pill className="w-4 h-4 text-indigo-600 shrink-0" />
-            <span className="truncate">البدائل والجرعات</span>
-          </button>
-        </div>
-
-        {/* Tab 1: Smart Pharmacy Copilot (Interactive Guide & Real Assistant) */}
-        {mainTab === 'copilot' && (
+        {/* View 1: Response-First Copilot Chat View */}
+        {activeView === 'copilot' && (
           <CopilotChatTab
             currentUser={activeUser}
             currentScreen={currentScreen}
             onNavigate={onNavigate}
             onCloseModal={onClose}
+            onOpenMoreTools={() => setShowToolsDrawer(true)}
           />
         )}
 
-        {/* Tab 2: Invoice Scanner OCR */}
-        {mainTab === 'invoice_scanner' && <InvoiceScannerTab />}
+        {/* View 2: Invoice Scanner Tab */}
+        {activeView === 'scanner' && (
+          <div className="flex-1 min-h-0 overflow-y-auto p-3">
+            <InvoiceScannerTab />
+          </div>
+        )}
 
-        {/* Tab 3: Clinical Tools (Alternatives, Drug Interactions, Pediatric Doses) */}
-        {mainTab === 'clinical' && (
-          <div className="space-y-3.5">
-            {/* Clinical sub-selector */}
-            <div className="flex items-center gap-1.5 border-b border-slate-100 pb-2 text-2xs font-bold">
+        {/* View 3: Clinical Tools Tab */}
+        {activeView === 'clinical' && (
+          <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-3.5">
+            {/* Clinical Sub-tabs */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold">
               <button
                 type="button"
-                onClick={() => setClinicalSubTab('alternatives')}
-                className={`py-1.5 px-3 rounded-lg transition-all ${
-                  clinicalSubTab === 'alternatives'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                onClick={() => setClinicalTab('alternatives')}
+                className={`flex-1 py-1.5 px-2 rounded-lg transition-all ${
+                  clinicalTab === 'alternatives'
+                    ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400'
                 }`}
               >
                 البدائل المتوفرة
               </button>
               <button
                 type="button"
-                onClick={() => setClinicalSubTab('interactions')}
-                className={`py-1.5 px-3 rounded-lg transition-all ${
-                  clinicalSubTab === 'interactions'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                onClick={() => setClinicalTab('interactions')}
+                className={`flex-1 py-1.5 px-2 rounded-lg transition-all ${
+                  clinicalTab === 'interactions'
+                    ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400'
                 }`}
               >
                 فحص التعارضات
               </button>
               <button
                 type="button"
-                onClick={() => setClinicalSubTab('dose')}
-                className={`py-1.5 px-3 rounded-lg transition-all ${
-                  clinicalSubTab === 'dose'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                onClick={() => setClinicalTab('dose')}
+                className={`flex-1 py-1.5 px-2 rounded-lg transition-all ${
+                  clinicalTab === 'dose'
+                    ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400'
                 }`}
               >
                 جرعات الأطفال
@@ -239,7 +281,7 @@ export const SmartAssistantModal: React.FC<SmartAssistantModalProps> = ({
             </div>
 
             {/* Alternatives View */}
-            {clinicalSubTab === 'alternatives' && (
+            {clinicalTab === 'alternatives' && (
               <div className="space-y-3 text-xs">
                 <div className="relative">
                   <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
@@ -247,157 +289,257 @@ export const SmartAssistantModal: React.FC<SmartAssistantModalProps> = ({
                     type="text"
                     value={searchDrug}
                     onChange={(e) => setSearchDrug(e.target.value)}
-                    placeholder="ابحث عن الدواء الأساسي لإيجاد بدائله في الصيدلية..."
-                    className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                    placeholder="ابحث عن الدواء لإيجاد بدائله في الصيدلية..."
+                    className="w-full pr-9 pl-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                    <span className="font-bold text-slate-700 block">اختر الصنف المطلوب بدائله:</span>
-                    <div className="max-h-[200px] overflow-y-auto space-y-1 pr-0.5">
-                      {filteredDrugs.map((p) => (
-                        <button
-                          key={p.id}
-                          onClick={() => setSelectedDrug(p)}
-                          className={`w-full text-right p-2 rounded-xl border text-xs transition-all ${
-                            selectedDrug?.id === p.id
-                              ? 'bg-indigo-50 border-indigo-300 font-bold text-indigo-900'
-                              : 'bg-white border-slate-200 hover:border-slate-300'
-                          }`}
-                        >
-                          <div className="truncate">{p.name_ar}</div>
-                          {p.active_ingredient && (
-                            <div className="text-2xs text-slate-400 truncate">{p.active_ingredient}</div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {products
+                    .filter((p) => p.name_ar.includes(searchDrug) || p.name_en?.toLowerCase().includes(searchDrug.toLowerCase()))
+                    .slice(0, 5)
+                    .map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setSelectedDrug(p)}
+                        className={`w-full text-right p-2 rounded-xl text-xs flex items-center justify-between border transition-all ${
+                          selectedDrug?.id === p.id
+                            ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-bold dark:bg-indigo-950/60 dark:border-indigo-700'
+                            : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="truncate">{p.name_ar}</span>
+                        <span className="font-mono text-slate-500 text-2xs">{Money.format(p.current_selling_price)}</span>
+                      </button>
+                    ))}
+                </div>
 
-                  <div className="p-3 bg-white rounded-2xl border border-slate-200 space-y-2">
-                    <span className="font-bold text-slate-900 block flex items-center justify-between">
-                      <span>البدائل المقترحة بالصيدلية</span>
-                      <span className="text-2xs font-mono text-indigo-600 font-bold">({alternatives.length} بديل)</span>
-                    </span>
-
-                    <div className="max-h-[200px] overflow-y-auto space-y-1.5 pr-0.5">
-                      {alternatives.length === 0 ? (
-                        <p className="text-slate-400 py-10 text-center">لا توجد بدائل مسجلة بنفس الفعالية أو التصنيف</p>
-                      ) : (
-                        alternatives.map((alt) => (
+                {selectedDrug && (
+                  <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                    <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center justify-between">
+                      <span>بدائل ({selectedDrug.name_ar}):</span>
+                      <span className="text-2xs text-indigo-600 font-normal">المادة: {selectedDrug.active_ingredient || 'عام'}</span>
+                    </h4>
+                    {alternatives.length === 0 ? (
+                      <p className="text-slate-400 text-2xs">لا توجد بدائل مسجلة بنفس المادة الفعالة حالياً.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {alternatives.map((alt) => (
                           <div
                             key={alt.id}
-                            className="p-2.5 bg-indigo-50/50 border border-indigo-100 rounded-xl flex items-center justify-between"
+                            className="bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between"
                           >
                             <div>
-                              <div className="font-bold text-slate-900">{alt.name_ar}</div>
-                              <div className="text-2xs text-indigo-700">
-                                {alt.active_ingredient ? `مادة فعالة: ${alt.active_ingredient}` : 'نفس العائلة الدوائية'}
-                              </div>
+                              <span className="font-bold text-slate-900 dark:text-slate-100 block">{alt.name_ar}</span>
+                              <span className="text-2xs text-slate-500">{alt.name_en}</span>
                             </div>
-                            <div className="font-mono font-bold text-emerald-700">
-                              {Money.format(alt.current_selling_price || 0)}
-                            </div>
+                            <span className="font-mono font-bold text-emerald-600 text-xs">{Money.format(alt.current_selling_price)}</span>
                           </div>
-                        ))
-                      )}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
               </div>
             )}
 
-            {/* Drug Interactions View */}
-            {clinicalSubTab === 'interactions' && (
+            {/* Interactions View */}
+            {clinicalTab === 'interactions' && (
               <div className="space-y-3 text-xs">
-                <p className="text-slate-500">أدخل اسم دواءين للتحقق من التداخلات والتعارضات المحتملة بينهما:</p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
                   <div>
-                    <label className="block text-slate-700 font-bold mb-1">الدواء الأول</label>
+                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-bold">الدواء الأول:</label>
                     <input
                       type="text"
                       value={drug1}
                       onChange={(e) => setDrug1(e.target.value)}
                       placeholder="مثال: وارفارين، اوميبرازول..."
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                      className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold"
                     />
                   </div>
-
                   <div>
-                    <label className="block text-slate-700 font-bold mb-1">الدواء الثاني</label>
+                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-bold">الدواء الثاني:</label>
                     <input
                       type="text"
                       value={drug2}
                       onChange={(e) => setDrug2(e.target.value)}
-                      placeholder="مثال: اسبرين، سيبروفلوكساسين..."
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                      placeholder="مثال: اسبرين، كلوبيدوجريل..."
+                      className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold"
                     />
                   </div>
+                  <button
+                    type="button"
+                    onClick={handleCheckInteractions}
+                    className="w-full py-2 bg-indigo-600 text-white rounded-xl font-bold shadow-xs hover:bg-indigo-700 transition-colors"
+                  >
+                    فحص التعارض السريري
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleCheckInteractions}
-                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5"
-                >
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>فحص التعارض السريري</span>
-                </button>
-
                 {interactionResult && (
-                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold leading-relaxed text-slate-800">
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
                     {interactionResult}
                   </div>
                 )}
               </div>
             )}
 
-            {/* Pediatric Dose Calculator */}
-            {clinicalSubTab === 'dose' && (
+            {/* Pediatric Dose View */}
+            {clinicalTab === 'dose' && (
               <div className="space-y-3 text-xs">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-slate-700 font-bold mb-1">وزن الطفل (كجم) *</label>
-                    <input
-                      type="number"
-                      min="2"
-                      max="60"
+                    <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">وزن الطفل (كجم) *</label>
+                    <NumericInput
+                      min={2}
+                      max={60}
+                      allowDecimals={true}
                       value={weightKg}
-                      onChange={(e) => setWeightKg(Number(e.target.value))}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-base font-bold"
+                      onChange={(val) => setWeightKg(val)}
+                      suffix="كجم"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-700 font-bold mb-1">الدواء المراد حسابه *</label>
+                    <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">الدواء المطلوب *</label>
                     <select
                       value={selectedMed}
                       onChange={(e) => setSelectedMed(e.target.value as any)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                      className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-xs"
                     >
                       <option value="paracetamol">باراسيتامول (Paracetamol - 10-15 mg/kg)</option>
                       <option value="ibuprofen">ايبوبروفين (Ibuprofen - 10 mg/kg)</option>
-                      <option value="amoxicillin">اموكسيسيلين (Amoxicillin - 50 mg/kg/day)</option>
+                      <option value="amoxicillin">اموكسيسيللين (Amoxicillin - 50 mg/kg)</option>
                     </select>
                   </div>
                 </div>
 
-                <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-2xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-600 font-bold">الجرعة المحسوبة للطفل:</span>
-                    <span className="font-mono text-base font-black text-indigo-900">{pediatricCalc.doseText}</span>
+                <div className="bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-3.5 space-y-2">
+                  <div className="flex items-center justify-between border-b border-indigo-200/60 pb-2">
+                    <span className="font-bold text-indigo-950 dark:text-indigo-200">الجرعة المحسوبة:</span>
+                    <span className="font-bold font-mono text-indigo-700 dark:text-indigo-300 text-sm">
+                      {pediatricCalc.doseText}
+                    </span>
                   </div>
-                  <div className="flex items-center justify-between text-2xs text-slate-600 border-t border-indigo-100 pt-1.5">
-                    <span>التكرار الموصى به:</span>
-                    <span className="font-bold text-slate-800">{pediatricCalc.frequency}</span>
-                  </div>
-                  <div className="text-2xs text-amber-800 bg-amber-50 p-2 rounded-xl border border-amber-200 font-medium">
-                    <strong>تنبيه سريري:</strong> {pediatricCalc.notes}
+                  <div className="text-2xs text-slate-600 dark:text-slate-300 space-y-1">
+                    <p>• التكرار: {pediatricCalc.frequency}</p>
+                    <p className="text-amber-800 dark:text-amber-300 font-semibold">• تنبيه: {pediatricCalc.notes}</p>
                   </div>
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Tools Drawer Sheet (Organized Accordion / Bottom Sheet for secondary tools) */}
+        {showToolsDrawer && (
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-2xs z-50 flex flex-col justify-end animate-in fade-in duration-150">
+            <div className="bg-white dark:bg-slate-900 rounded-t-3xl border-t border-slate-200 dark:border-slate-800 p-4 space-y-3 max-h-[70vh] overflow-y-auto animate-in slide-in-from-bottom duration-200">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-indigo-600" />
+                  أدوات وخدمات المساعد الذكي
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setShowToolsDrawer(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                >
+                  <X className="w-4.5 h-4.5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('copilot');
+                    setShowToolsDrawer(false);
+                  }}
+                  className={`p-3 rounded-2xl border text-right transition-all flex items-center gap-2.5 ${
+                    activeView === 'copilot'
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-900 font-bold dark:bg-indigo-950/50 dark:border-indigo-800'
+                      : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <MessageSquareCode className="w-5 h-5 text-indigo-600 shrink-0" />
+                  <div>
+                    <span className="block font-bold">المحادثة والاستعلامات الذكية</span>
+                    <span className="block text-[10px] text-slate-500">الاستفسار عن الأصناف والمخزون والفواتير</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('scanner');
+                    setShowToolsDrawer(false);
+                  }}
+                  className={`p-3 rounded-2xl border text-right transition-all flex items-center gap-2.5 ${
+                    activeView === 'scanner'
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-900 font-bold dark:bg-indigo-950/50 dark:border-indigo-800'
+                      : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <ScanLine className="w-5 h-5 text-indigo-600 shrink-0" />
+                  <div>
+                    <span className="block font-bold">فاحص الفواتير (OCR)</span>
+                    <span className="block text-[10px] text-slate-500">تحليل وتفريغ فواتير الشراء بالذكاء الاصطناعي</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('clinical');
+                    setClinicalTab('alternatives');
+                    setShowToolsDrawer(false);
+                  }}
+                  className={`p-3 rounded-2xl border text-right transition-all flex items-center gap-2.5 ${
+                    activeView === 'clinical' && clinicalTab === 'alternatives'
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-900 font-bold dark:bg-indigo-950/50 dark:border-indigo-800'
+                      : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <Pill className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <span className="block font-bold">بدائل الأدوية المتوفرة</span>
+                    <span className="block text-[10px] text-slate-500">البحث التلقائي بالمادة الفعالة والتصنيف</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('clinical');
+                    setClinicalTab('dose');
+                    setShowToolsDrawer(false);
+                  }}
+                  className={`p-3 rounded-2xl border text-right transition-all flex items-center gap-2.5 ${
+                    activeView === 'clinical' && clinicalTab === 'dose'
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-900 font-bold dark:bg-indigo-950/50 dark:border-indigo-800'
+                      : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <Calculator className="w-5 h-5 text-amber-600 shrink-0" />
+                  <div>
+                    <span className="block font-bold">حاسبة جرعات الأطفال</span>
+                    <span className="block text-[10px] text-slate-500">حساب الجرعات الدوائية حسب الوزن والسن</span>
+                  </div>
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowToolsDrawer(false)}
+                  className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-colors"
+                >
+                  إغلاق القائمة
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

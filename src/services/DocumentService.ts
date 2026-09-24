@@ -396,13 +396,10 @@ export class DocumentService {
   }
 
   /**
-   * Renders high-resolution print window for connected printers
+   * Prints the document via a styled HTML print window or printable iframe (optimized for Android WebView)
    */
   static printViaWindow(doc: DocumentData, isThermal: boolean = true) {
     if (typeof window === 'undefined') return;
-
-    const printWindow = window.open('', '_blank', 'width=480,height=700');
-    if (!printWindow) return;
 
     const html = `
       <!DOCTYPE html>
@@ -411,44 +408,51 @@ export class DocumentService {
         <meta charset="utf-8">
         <title>${doc.document_number}</title>
         <style>
-          @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+          @import url('/fonts/cairo.css');
           * { box-sizing: border-box; margin: 0; padding: 0; }
           body {
-            font-family: 'Cairo', sans-serif;
+            font-family: 'Cairo', system-ui, -apple-system, sans-serif;
             background: #fff;
             color: #000;
-            font-size: ${isThermal ? '12px' : '14px'};
-            line-height: 1.4;
-            padding: ${isThermal ? '10px' : '30px'};
-            width: ${isThermal ? '78mm' : '100%'};
+            font-size: ${isThermal ? '11px' : '13px'};
+            line-height: 1.35;
+            padding: ${isThermal ? '4px 6px' : '20px'};
+            width: ${isThermal ? '76mm' : '100%'};
             margin: auto;
           }
-          .header { text-align: center; border-bottom: 1px dashed #444; padding-bottom: 8px; margin-bottom: 8px; }
-          .title { font-size: ${isThermal ? '16px' : '22px'}; font-weight: 800; }
-          .meta-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 11px; }
-          table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-          th { border-bottom: 1px solid #000; padding: 4px 2px; text-align: right; font-size: 11px; font-weight: 700; }
-          td { padding: 4px 2px; border-bottom: 1px dashed #eee; font-size: 11px; }
+          .thermal-header { text-align: center; border-bottom: 1px dotted #000; padding-bottom: 6px; margin-bottom: 6px; }
+          .thermal-title { font-size: ${isThermal ? '15px' : '20px'}; font-weight: 800; }
+          .meta-row { display: flex; justify-content: space-between; margin: 2px 0; font-size: 10px; }
+          table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+          th { border-bottom: 1px solid #000; padding: 3px 1px; text-align: right; font-size: 10px; font-weight: 700; }
+          td { padding: 3px 1px; border-bottom: 1px dotted #ddd; font-size: 10px; }
           .text-left { text-align: left; }
           .text-center { text-align: center; }
-          .totals-table { width: 100%; margin-top: 6px; border-top: 1px dashed #000; }
-          .totals-table td { border: none; padding: 3px 0; }
-          .grand-total { font-weight: 800; font-size: ${isThermal ? '14px' : '18px'}; }
-          .footer { text-align: center; font-size: 10px; margin-top: 12px; border-top: 1px dashed #444; padding-top: 6px; }
+          .font-mono { font-family: monospace, monospace; }
+          .totals-table { width: 100%; margin-top: 4px; border-top: 1px dotted #000; }
+          .totals-table td { border: none; padding: 2px 0; }
+          .grand-total { font-weight: 800; font-size: ${isThermal ? '13px' : '16px'}; border-top: 1px solid #000; border-bottom: 1px solid #000; }
+          .barcode-box { text-align: center; margin: 8px 0 4px 0; font-family: monospace; letter-spacing: 2px; font-size: 12px; font-weight: bold; border: 1px dashed #888; padding: 4px; }
+          .footer { text-align: center; font-size: 9px; margin-top: 8px; border-top: 1px dotted #000; padding-top: 4px; }
           @media print {
-            body { padding: 0; width: ${isThermal ? '78mm' : '100%'}; }
+            body { padding: 0; width: ${isThermal ? '76mm' : '100%'}; margin: 0; }
             @page { margin: 0; size: ${isThermal ? '80mm auto' : 'A4'}; }
           }
         </style>
       </head>
       <body>
-        <div class="header">
-          <div class="title">${doc.pharmacy.name_ar}</div>
-          <div style="font-size: 11px;">${doc.pharmacy.address_ar || ''} | هاتف: ${doc.pharmacy.phone}</div>
+        <div class="thermal-header">
+          <div class="thermal-title">${doc.pharmacy.name_ar}</div>
+          <div style="font-size: 10px;">${doc.pharmacy.address_ar || ''} | هاتف: ${doc.pharmacy.phone}</div>
+          ${doc.pharmacy.tax_number ? `<div style="font-size: 9px;">الرقم الضريبي: ${doc.pharmacy.tax_number}</div>` : ''}
         </div>
-        <div class="meta-row"><span>المستند:</span><strong>${doc.document_number}</strong></div>
-        <div class="meta-row"><span>التاريخ:</span><span>${doc.business_date}</span></div>
-        <div class="meta-row"><span>الطرف:</span><strong>${doc.party_name || 'عام'}</strong></div>
+
+        <div class="meta-row"><span>رقم الفاتورة:</span><strong class="font-mono">${doc.document_number}</strong></div>
+        <div class="meta-row"><span>التاريخ والوقت:</span><span class="font-mono">${doc.business_date}</span></div>
+        <div class="meta-row"><span>العميل:</span><strong>${doc.party_name || 'عميل نقدي عام'}</strong></div>
+        <div class="meta-row"><span>المسؤول:</span><span>${doc.responsible_user || 'الكاشير'}</span></div>
+        <div class="meta-row"><span>طريقة الدفع:</span><strong>${doc.payment_method === 'cash' ? 'نقداً' : doc.payment_method === 'credit' ? 'آجل' : (doc.payment_method || 'نقداً')}</strong></div>
+
         <table>
           <thead>
             <tr>
@@ -462,52 +466,101 @@ export class DocumentService {
               .map(
                 (l) => `
               <tr>
-                <td>${l.name}</td>
-                <td class="text-center">${l.quantity} ${l.unit}</td>
-                <td class="text-left">${Money.format(l.line_total)}</td>
+                <td>
+                  <div><strong>${l.name}</strong></div>
+                  ${l.batch_number ? `<div style="font-size: 8px; color: #666;" class="font-mono">تشغيلة: ${l.batch_number}</div>` : ''}
+                </td>
+                <td class="text-center font-mono">${l.quantity} ${l.unit}</td>
+                <td class="text-left font-mono">${Money.format(l.line_total)}</td>
               </tr>
             `
               )
               .join('')}
           </tbody>
         </table>
+
         <table class="totals-table">
           <tr>
-            <td>الإجمالي الفرعي:</td>
+            <td>المجموع الفرعي:</td>
             <td class="text-left font-mono">${Money.format(doc.subtotal)}</td>
           </tr>
           ${
             doc.discount_amount > 0
-              ? `<tr><td>الخصم:</td><td class="text-left font-mono text-rose-600">-${Money.format(doc.discount_amount)}</td></tr>`
+              ? `<tr><td>الخصم الممنوح:</td><td class="text-left font-mono">-${Money.format(doc.discount_amount)}</td></tr>`
               : ''
           }
           ${
             doc.tax_amount > 0
-              ? `<tr><td>الضريبة:</td><td class="text-left font-mono">+${Money.format(doc.tax_amount)}</td></tr>`
+              ? `<tr><td>ضريبة القيمة المضافة:</td><td class="text-left font-mono">+${Money.format(doc.tax_amount)}</td></tr>`
               : ''
           }
           <tr class="grand-total">
-            <td>الإجمالي النهائي (الصافي):</td>
+            <td>الصافي النهائي:</td>
             <td class="text-left font-mono">${Money.format(doc.net_total)}</td>
+          </tr>
+          <tr>
+            <td>المدفوع:</td>
+            <td class="text-left font-mono">${Money.format(doc.paid_amount)}</td>
           </tr>
           ${
             doc.remaining_amount > 0
-              ? `<tr><td>المتبقي:</td><td class="text-left font-mono">${Money.format(doc.remaining_amount)}</td></tr>`
+              ? `<tr style="font-weight: bold; color: #c00;"><td>المتبقي (آجل):</td><td class="text-left font-mono">${Money.format(doc.remaining_amount)}</td></tr>`
               : ''
           }
         </table>
-        <div class="footer">شكراً لتعاملكم معنا ودمتم بصحة وعافية</div>
-        <script>
-          window.onload = function() {
-            setTimeout(function() { window.print(); }, 300);
-          }
-        </script>
+
+        <div class="barcode-box">
+          * ${doc.document_number} *
+        </div>
+
+        <div class="footer">
+          <div>شكراً لتعاملكم معنا ودمتم بصحة وعافية</div>
+          <div style="font-size: 8px; margin-top: 2px;">نظام الصيدلية النموذجي المتكامل</div>
+        </div>
       </body>
       </html>
     `;
 
-    printWindow.document.write(html);
-    printWindow.document.close();
+    // Try iframe print first for mobile WebView stability
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+
+      const frameDoc = iframe.contentWindow?.document;
+      if (frameDoc) {
+        frameDoc.open();
+        frameDoc.write(html);
+        frameDoc.close();
+
+        setTimeout(() => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+          }, 2000);
+        }, 300);
+        return;
+      }
+    } catch (e) {
+      console.warn('Iframe print failed, falling back to window.open', e);
+    }
+
+    // Fallback: window.open
+    const printWindow = window.open('', '_blank', 'width=480,height=700');
+    if (printWindow) {
+      printWindow.document.write(html);
+      printWindow.document.close();
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+      }, 300);
+    }
   }
 
   /**

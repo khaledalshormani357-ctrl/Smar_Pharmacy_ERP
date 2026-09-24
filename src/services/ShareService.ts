@@ -1,19 +1,33 @@
-// ShareService - Native Android and Web Sharing Engine
-// Accurately differentiates between native Android runtime and Web environment.
+// ShareService - Native Android & Cross-Platform Document Sharing
+// Uses @capacitor/share and @capacitor/filesystem on Native Android, with Web Share fallback.
 
 import { ShareOptions, ShareResult, DocumentData } from '../types';
 import { PdfService } from './PdfService';
 import { DocumentService } from './DocumentService';
+import { Share } from '@capacitor/share';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 
 export class ShareService {
   /**
-   * Checks if running under native Android runtime
+   * Checks if running under native Android runtime (Capacitor Native)
    */
   static isNativeAndroid(): boolean {
     if (typeof window === 'undefined') return false;
     const isCapacitor = !!(window as any)?.Capacitor?.isNativePlatform?.();
     const isAndroidUA = /android/i.test(navigator.userAgent);
     return isCapacitor && isAndroidUA;
+  }
+
+  /**
+   * Helper to convert Uint8Array bytes to Base64 string for Android filesystem
+   */
+  private static uint8ArrayToBase64(bytes: Uint8Array): string {
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
   }
 
   /**
@@ -25,9 +39,41 @@ export class ShareService {
     options: ShareOptions = {}
   ): Promise<ShareResult> {
     const title = options.title || 'مستند صيدلية';
-    const text = options.text || 'مرفق مستند رسمي صادرة من نظام الصيدلية.';
+    const text = options.text || 'مرفق مستند رسمي صادر من نظام الصيدلية.';
 
-    // 1. Web Share API with Files support (modern browsers & mobile web)
+    // 1. Try Native Android Share Intent via Capacitor
+    if (this.isNativeAndroid()) {
+      try {
+        const base64Data = this.uint8ArrayToBase64(pdfBytes);
+        const savedFile = await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Cache
+        });
+
+        const uriResult = await Filesystem.getUri({
+          path: fileName,
+          directory: Directory.Cache
+        });
+
+        await Share.share({
+          title,
+          text,
+          url: uriResult.uri,
+          dialogTitle: 'مشاركة المستند (WhatsApp, Gmail, Telegram...)'
+        });
+
+        return {
+          success: true,
+          method: 'native_share',
+          message: 'تم فتح نافذة المشاركة في نظام أندرويد بنجاح.'
+        };
+      } catch (err: any) {
+        console.warn('Capacitor native share failed, falling back to Web Share', err);
+      }
+    }
+
+    // 2. Web Share API with Files support (Mobile Web & modern browsers)
     if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
       try {
         const file = new File([pdfBytes], fileName, { type: 'application/pdf' });
@@ -52,7 +98,7 @@ export class ShareService {
       }
     }
 
-    // 2. Direct browser download fallback
+    // 3. Direct browser download fallback
     PdfService.downloadPdf(pdfBytes, fileName);
     return {
       success: true,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { RotateCw, Settings, Power, Smartphone, Moon, Sun } from 'lucide-react';
+import { RotateCw, Settings, Power, Smartphone, Moon, Sun, Menu } from 'lucide-react';
 import { PharmacyProfile, User } from '../../types';
 import { AppBrandIcon } from '../common/AppBrandIcon';
 import { useTheme } from '../../context/ThemeContext';
@@ -11,6 +11,7 @@ interface AppHeaderProps {
   onOpenSettings: () => void;
   onLockSession: () => void;
   onOpenApkModal?: () => void;
+  onOpenDrawer?: () => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -19,21 +20,35 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onRefresh,
   onOpenSettings,
   onLockSession,
-  onOpenApkModal
+  onOpenApkModal,
+  onOpenDrawer
 }) => {
   const { isDark, toggleTheme } = useTheme();
 
   return (
-    <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 px-4 py-2.5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200">
+    <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 px-3 sm:px-4 py-2.5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200">
       <div className="flex items-center justify-between gap-3 max-w-lg mx-auto md:max-w-4xl">
-        {/* Profile Branding */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          <AppBrandIcon className="w-10 h-10" />
+        {/* Drawer Menu Button & Profile Branding */}
+        <div className="flex items-center gap-2 min-w-0">
+          {onOpenDrawer && (
+            <button
+              id="btn-header-drawer"
+              type="button"
+              onClick={onOpenDrawer}
+              title="القائمة الجانبية والوصول السريع"
+              aria-label="فتح القائمة الجانبية"
+              className="p-2 -mr-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all active:scale-95 shrink-0"
+            >
+              <Menu className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            </button>
+          )}
+
+          <AppBrandIcon className="w-9 h-9 sm:w-10 sm:h-10 shrink-0" />
           <div className="min-w-0">
-            <h1 className="text-sm font-black text-slate-900 dark:text-slate-100 truncate leading-tight">
+            <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-slate-100 truncate leading-tight">
               {profile.name_ar || 'صيدليتي الذكية'}
             </h1>
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+            <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
               <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
               <span className="truncate">نظام إدارة الصيدليات الذكي | {currentUser.full_name}</span>
             </div>

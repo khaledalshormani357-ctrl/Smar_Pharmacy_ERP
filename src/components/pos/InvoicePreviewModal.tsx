@@ -1,10 +1,11 @@
 import React from 'react';
-import { X, CheckCircle2, FileText, Ban, AlertTriangle, Calendar, User, DollarSign, Package, Printer, Download } from 'lucide-react';
+import { X, CheckCircle2, FileText, Ban, AlertTriangle, Calendar, User, DollarSign, Package, Printer, Download, Share2, Receipt, MessageCircle } from 'lucide-react';
 import { Sale, SaleItem, Customer } from '../../types';
 import { db } from '../../db/sqlite';
 import { Money } from '../../utils/money';
 import { DocumentService } from '../../services/DocumentService';
 import { PrintService } from '../../services/PrintService';
+import { ShareService } from '../../services/ShareService';
 
 interface InvoicePreviewModalProps {
   isOpen: boolean;
@@ -26,8 +27,59 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
   const [showCancelPrompt, setShowCancelPrompt] = React.useState(false);
   const [cancelReason, setCancelReason] = React.useState('');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [statusMsg, setStatusMsg] = React.useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const showStatus = (msg: string) => {
+    setStatusMsg(msg);
+    setTimeout(() => setStatusMsg(null), 3500);
+  };
+
+  const handlePrintStandard = async () => {
+    try {
+      const doc = DocumentService.buildSaleInvoiceDoc(sale.id);
+      const res = await PrintService.printDocument(doc, { paper_size: 'A4' });
+      showStatus(res.message || 'تم إرسال أمر الطباعة A4.');
+    } catch (err: any) {
+      showStatus(`فشل أمر الطباعة: ${err?.message || 'خطأ'}`);
+    }
+  };
+
+  const handlePrintThermal = async () => {
+    try {
+      const doc = DocumentService.buildSaleInvoiceDoc(sale.id);
+      const res = await PrintService.printDocument(doc, { paper_size: '80mm' });
+      showStatus(res.message || 'تم إرسال أمر الطباعة الحرارية 80mm.');
+    } catch (err: any) {
+      showStatus(`فشل الطباعة الحرارية: ${err?.message || 'خطأ'}`);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    try {
+      const doc = DocumentService.buildSaleInvoiceDoc(sale.id);
+      await DocumentService.downloadDocumentPdf(doc, 'A4');
+      showStatus('تم تنزيل وتصدير مستند PDF بنجاح.');
+    } catch (err: any) {
+      showStatus(`فشل تصدير PDF: ${err?.message || 'خطأ'}`);
+    }
+  };
+
+  const handleAndroidShare = async () => {
+    try {
+      const doc = DocumentService.buildSaleInvoiceDoc(sale.id);
+      const res = await ShareService.shareDocument(doc, '80mm');
+      showStatus(res.message || 'تمت مشاركة الفاتورة بنجاح.');
+    } catch (err: any) {
+      showStatus(`فشل المشاركة: ${err?.message || 'خطأ'}`);
+    }
+  };
+
+  const handleWhatsAppShare = () => {
+    const doc = DocumentService.buildSaleInvoiceDoc(sale.id);
+    DocumentService.shareViaWhatsApp(doc, customer?.phone || '');
+  };
 
   const handleConfirmCancel = () => {
     if (!cancelReason.trim()) return;
@@ -76,6 +128,13 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Status Toast */}
+        {statusMsg && (
+          <div className="bg-emerald-500 text-white text-xs px-4 py-2 text-center font-bold animate-in fade-in">
+            {statusMsg}
+          </div>
+        )}
 
         {/* Invoice Metadata */}
         <div className="p-4 bg-slate-50 border-b border-slate-200 text-xs space-y-1.5 font-medium">
@@ -188,30 +247,58 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             )}
           </div>
 
-          {/* Print & PDF Actions */}
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={async () => {
-                const doc = DocumentService.buildSaleInvoiceDoc(sale.id);
-                await DocumentService.downloadDocumentPdf(doc, 'A4');
-              }}
-              className="py-1.5 px-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>تنزيل PDF</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const doc = DocumentService.buildSaleInvoiceDoc(sale.id);
-                PrintService.printDocument(doc, { paper_size: '80mm' });
-              }}
-              className="py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>طباعة الفاتورة</span>
-            </button>
+          {/* Separated Document Actions (Print, Thermal, PDF Export, Android Share, WhatsApp) */}
+          <div className="pt-2.5 border-t border-slate-200 space-y-2">
+            <div className="text-[11px] font-bold text-slate-500">خيارات المستند والطباعة:</div>
+            
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handlePrintThermal}
+                className="py-2 px-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all"
+              >
+                <Receipt className="w-3.5 h-3.5 text-emerald-400" />
+                <span>إيصال حراري (80mm)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrintStandard}
+                className="py-2 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+              >
+                <Printer className="w-3.5 h-3.5 text-blue-600" />
+                <span>طباعة عادية (A4)</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                className="py-1.5 px-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition-all"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>تصدير PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleAndroidShare}
+                className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition-all"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>مشاركة أندرويد</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleWhatsAppShare}
+                className="py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition-all"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>واتساب</span>
+              </button>
+            </div>
           </div>
         </div>
 

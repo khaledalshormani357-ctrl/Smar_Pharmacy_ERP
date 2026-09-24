@@ -3,6 +3,7 @@ import { X, Printer, Barcode, Tag, Calendar, DollarSign, CheckCircle2 } from 'lu
 import { Product, Batch } from '../../types';
 import { Money } from '../../utils/money';
 import { db } from '../../db/sqlite';
+import { NumericInput } from '../ui/NumericInput';
 
 interface BarcodeLabelModalProps {
   product: Product;
@@ -97,13 +98,12 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">عدد الملصقات المطلوبة</label>
-              <input
-                type="number"
-                min="1"
-                max="500"
+              <NumericInput
+                min={1}
+                max={500}
+                allowDecimals={false}
                 value={copies}
-                onChange={(e) => setCopies(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 font-mono focus:outline-hidden focus:border-blue-500"
+                onChange={(val) => setCopies(Math.max(1, val))}
               />
             </div>
 

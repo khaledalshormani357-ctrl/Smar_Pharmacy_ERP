@@ -23,6 +23,7 @@ import { PurchaseService } from '../../services/PurchaseService';
 import { Money } from '../../utils/money';
 import { Product, Supplier } from '../../types';
 import { classifyImageAnalysisError, readFileAsDataUrl, validateAnalysisImage, withTimeout } from '../../utils/phase82';
+import { NumericInput } from '../ui/NumericInput';
 
 interface ExtractedItem {
   id: string;
@@ -837,30 +838,30 @@ export const InvoiceScannerTab: React.FC = () => {
                             />
                           </td>
                           <td className="p-2">
-                            <input
-                              type="number"
-                              min="1"
+                            <NumericInput
+                              min={1}
+                              allowDecimals={false}
                               value={item.quantity}
-                              onChange={(e) => updateItem(item.id, { quantity: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                              className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-xs"
+                              onChange={(val) => updateItem(item.id, { quantity: Math.max(1, val) })}
+                              className="text-xs font-bold"
                             />
                           </td>
                           <td className="p-2">
-                            <input
-                              type="number"
-                              min="0"
+                            <NumericInput
+                              min={0}
+                              allowDecimals={true}
                               value={item.unit_purchase_price}
-                              onChange={(e) => updateItem(item.id, { unit_purchase_price: parseFloat(e.target.value) || 0 })}
-                              className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-xs"
+                              onChange={(val) => updateItem(item.id, { unit_purchase_price: val })}
+                              className="text-xs font-bold"
                             />
                           </td>
                           <td className="p-2">
-                            <input
-                              type="number"
-                              min="0"
+                            <NumericInput
+                              min={0}
+                              allowDecimals={true}
                               value={item.unit_selling_price}
-                              onChange={(e) => updateItem(item.id, { unit_selling_price: parseFloat(e.target.value) || 0 })}
-                              className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-xs text-emerald-700"
+                              onChange={(val) => updateItem(item.id, { unit_selling_price: val })}
+                              className="text-xs font-bold text-emerald-700"
                             />
                           </td>
                           <td className="p-2 font-mono font-bold text-slate-800 text-xs">

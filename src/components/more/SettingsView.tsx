@@ -22,6 +22,7 @@ import {
 import { db } from '../../db/sqlite';
 import { PharmacyProfile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
+import { NumericInput } from '../ui/NumericInput';
 
 export const SettingsView: React.FC = () => {
   const currentProfile = db.getState().profile;
@@ -333,14 +334,13 @@ export const SettingsView: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">نسبة الضريبة / القيمة المضافة (%)</label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
+              <NumericInput
+                min={0}
+                max={100}
+                allowDecimals={true}
                 value={taxPercent}
-                onChange={(e) => setTaxPercent(parseFloat(e.target.value) || 0)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-blue-500 font-mono"
+                onChange={(val) => setTaxPercent(val)}
+                suffix="%"
               />
               <span className="text-[10px] text-slate-400 mt-1 block">
                 تطبق تلقائياً في حسابات الضرائب بالفواتير (0% في حال الإعفاء)
@@ -349,14 +349,13 @@ export const SettingsView: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">هامش الربح التقديري (%)</label>
-              <input
-                type="number"
-                min="0"
-                max="1000"
-                step="0.5"
+              <NumericInput
+                min={0}
+                max={1000}
+                allowDecimals={true}
                 value={marginPercent}
-                onChange={(e) => setMarginPercent(parseFloat(e.target.value) || 0)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-blue-500 font-mono"
+                onChange={(val) => setMarginPercent(val)}
+                suffix="%"
               />
               <span className="text-[10px] text-slate-400 mt-1 block">
                 يقترح سعر البيع تلقائياً عند إضافة أصناف أو فواتير شراء جديدة
