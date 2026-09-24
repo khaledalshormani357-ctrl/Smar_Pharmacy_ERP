@@ -39,6 +39,16 @@ export class InventoryService {
       }
     }
 
+    // Pre-index categories and manufacturers for fast lookup
+    const categoriesMap = new Map<string, string>();
+    for (const c of state.categories) {
+      categoriesMap.set(c.id, c.name_ar || c.name_en || '');
+    }
+    const manufacturersMap = new Map<string, string>();
+    for (const m of state.manufacturers) {
+      manufacturersMap.set(m.id, m.name_ar || m.name_en || '');
+    }
+
     return state.products
       .filter((p) => (includeInactive ? !p.deleted_at : p.is_active && !p.deleted_at))
       .map((product) => {
@@ -59,9 +69,13 @@ export class InventoryService {
         const isNeedsReorder = totalBaseStock <= product.reorder_level;
 
         const conversions = conversionsByProduct.get(product.id) || [];
+        const category_name = product.category_id ? categoriesMap.get(product.category_id) || '' : '';
+        const manufacturer_name = product.manufacturer_id ? manufacturersMap.get(product.manufacturer_id) || '' : '';
 
         return {
           ...product,
+          category_name,
+          manufacturer_name,
           totalBaseStock,
           nearestExpiry,
           isExpired,

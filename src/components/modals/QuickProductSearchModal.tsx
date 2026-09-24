@@ -41,6 +41,7 @@ export const QuickProductSearchModal: React.FC<QuickProductSearchModalProps> = (
   const products = state.products || [];
   const batches = state.batches || [];
   const categories = state.categories || [];
+  const manufacturers = state.manufacturers || [];
   const unitConversions = state.unit_conversions || [];
 
   const [query, setQuery] = useState('');
@@ -99,6 +100,26 @@ export const QuickProductSearchModal: React.FC<QuickProductSearchModalProps> = (
     return map;
   }, [unitConversions, dbVersion]);
 
+  // Fast O(1) manufacturers lookup
+  const manufacturersMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (let i = 0; i < manufacturers.length; i++) {
+      const m = manufacturers[i];
+      map.set(m.id, normalizeArabicSearchText(m.name_ar || m.name_en || ''));
+    }
+    return map;
+  }, [manufacturers, dbVersion]);
+
+  // Fast O(1) categories lookup
+  const categoriesMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (let i = 0; i < categories.length; i++) {
+      const c = categories[i];
+      map.set(c.id, normalizeArabicSearchText(c.name_ar || c.name_en || ''));
+    }
+    return map;
+  }, [categories, dbVersion]);
+
   // Filtered products with normalized Arabic search
   const filteredProducts = useMemo(() => {
     const norm = normalizeArabicSearchText(debouncedQuery);
@@ -119,6 +140,8 @@ export const QuickProductSearchModal: React.FC<QuickProductSearchModalProps> = (
       const nGen = normalizeArabicSearchText(p.generic_name || '');
       const nBar = (p.barcode || '').toLowerCase();
       const nCode = (p.internal_code || '').toLowerCase();
+      const nMan = p.manufacturer_id ? manufacturersMap.get(p.manufacturer_id) || '' : '';
+      const nCat = p.category_id ? categoriesMap.get(p.category_id) || '' : '';
 
       if (
         nAr.includes(norm) ||
@@ -126,13 +149,15 @@ export const QuickProductSearchModal: React.FC<QuickProductSearchModalProps> = (
         nAct.includes(norm) ||
         nGen.includes(norm) ||
         nBar.includes(norm) ||
-        nCode.includes(norm)
+        nCode.includes(norm) ||
+        nMan.includes(norm) ||
+        nCat.includes(norm)
       ) {
         matches.push(p);
       }
     }
     return matches;
-  }, [products, debouncedQuery, dbVersion]);
+  }, [products, debouncedQuery, manufacturersMap, categoriesMap, dbVersion]);
 
   // Selected product logic
   const selectedProduct = useMemo(() => {
