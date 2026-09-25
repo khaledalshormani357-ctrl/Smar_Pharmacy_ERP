@@ -18,10 +18,12 @@ android {
     }
     signingConfigs {
         debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
+            if (file('debug.keystore').exists()) {
+                storeFile file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
         }
         release {
             // Production Release signing configuration:
@@ -41,7 +43,9 @@ android {
     }
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug
+            if (signingConfigs.debug.storeFile != null) {
+                signingConfig signingConfigs.debug
+            }
         }
         release {
             if (signingConfigs.release.storeFile != null) {

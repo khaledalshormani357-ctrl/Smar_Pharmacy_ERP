@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1D4ED8" />
+      <stop offset="100%" stop-color="#2563EB" />
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <filter id="subtleShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0F172A" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <!-- Base Rounded Hex-Shield -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Inner Soft Container -->
+  <rect x="28" y="28" width="456" height="456" rx="92" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="4" />
+
+  <!-- Central Symbol Group -->
+  <g filter="url(#subtleShadow)">
+    <!-- White Medical Cross Base Structure -->
+    <!-- Vertical Cross Stem -->
+    <rect x="216" y="104" width="80" height="304" rx="28" fill="#FFFFFF" />
+    <!-- Horizontal Cross Arm -->
+    <rect x="104" y="216" width="304" height="80" rx="28" fill="#FFFFFF" />
+
+    <!-- Emerald Vitality Arc & Leaf Fusion (Secondary Color #059669 / #10B981) -->
+    <!-- Dynamic curved pharmaceutical motif wrapping the top-right / bottom-left quadrants -->
+    <path d="M 256 128 C 330 128, 384 182, 384 256 C 384 296, 366 332, 338 356 C 326 366, 310 348, 322 336 C 344 314, 356 286, 356 256 C 356 200, 312 156, 256 156 Z" fill="url(#emeraldGrad)" />
+    <path d="M 256 384 C 182 384, 128 330, 128 256 C 128 216, 146 180, 174 156 C 186 146, 202 164, 190 176 C 168 198, 156 226, 156 256 C 156 312, 200 356, 256 356 Z" fill="url(#emeraldGrad)" />
+
+    <!-- Central Tech Pulse Core (Smart ERP Intelligence) -->
+    <circle cx="256" cy="256" r="44" fill="#FFFFFF" stroke="#2563EB" stroke-width="12" />
+    <circle cx="256" cy="256" r="22" fill="#10B981" />
+  </g>
+</svg>

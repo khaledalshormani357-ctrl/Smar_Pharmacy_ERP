@@ -46,28 +46,34 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Install Android SDK Packages
+      - name: Accept Android Licenses & Setup SDK
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36"
-          sdkmanager "build-tools;36.0.0"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
 
       - name: Make Gradlew Executable
         run: chmod +x ./android/gradlew
 
       - name: Build Debug APK
-        run: ./android/gradlew -p android assembleDebug --stacktrace
+        run: |
+          cd android
+          ./gradlew assembleDebug --stacktrace
 
       - name: Prepare APK for Artifact and Release
         run: |
           mkdir -p release-apk
           cp android/app/build/outputs/apk/debug/app-debug.apk release-apk/SmartPharmacy.apk
+          cd release-apk
+          sha256sum SmartPharmacy.apk > sha256.txt
+          cat sha256.txt
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SmartPharmacy-APK
-          path: release-apk/SmartPharmacy.apk
+          path: |
+            release-apk/SmartPharmacy.apk
+            release-apk/sha256.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -75,10 +81,18 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0-apk
-          name: Smart Pharmacy ERP - APK v1.0.0
-          body: تطبيق نظام الصيدلية الذكي بصيغة APK جاهز للتحميل والتثبيت المباشر على جميع هواتف وأجهزة أندرويد.
-          files: release-apk/SmartPharmacy.apk
+          tag_name: v1.0.1-apk
+          name: Smart Pharmacy ERP - APK v1.0.1
+          body: |
+            تطبيق نظام الصيدلية الذكي بصيغة APK جاهز للتحميل والتثبيت المباشر على جميع هواتف وأجهزة أندرويد (Version Code: 2, Version: 1.0.1).
+            
+            ### تعليمات التثبيت:
+            1. حمل ملف `SmartPharmacy.apk`.
+            2. افتح الملف واضغط "تثبيت" (إذا ظهر تحذير التثبيت من مصادر غير معروفة، اضغط سماح/متابعة).
+            3. في حال وجود نسخة قديمة مسبقة بتوقيع مختلف، قم بإلغاء تثبيت النسخة القديمة أولاً ثم ثبت النسخة الجديدة.
+          files: |
+            release-apk/SmartPharmacy.apk
+            release-apk/sha256.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
