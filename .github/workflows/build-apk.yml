@@ -49,7 +49,22 @@ jobs:
       - name: Accept Android Licenses & Setup SDK
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || true
+
+      - name: Ensure Debug Keystore Exists
+        run: |
+          if [ ! -f "android/app/debug.keystore" ]; then
+            echo "Generating consistent debug keystore..."
+            keytool -genkeypair -v \
+              -keystore android/app/debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Make Gradlew Executable
         run: chmod +x ./android/gradlew
