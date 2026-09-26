@@ -67,8 +67,22 @@ export const InvoiceScannerTab: React.FC = () => {
   const [providerConfigured, setProviderConfigured] = useState<boolean | null>(null);
 
   React.useEffect(() => {
-    fetch('/api/assistant/status')
-      .then((r) => r.json())
+    let statusUrl = '/api/assistant/status';
+    if (typeof window !== 'undefined') {
+      const isCapacitor = (window as any).Capacitor?.isNativePlatform?.() ||
+        window.location.protocol === 'capacitor:' ||
+        (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '');
+      if (isCapacitor) {
+        statusUrl = 'https://ais-pre-s3kpf4jbgnycqoblc463mc-177021215798.europe-west2.run.app/api/assistant/status';
+      }
+    }
+
+    fetch(statusUrl)
+      .then((r) => {
+        const ct = r.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) return { configured: false };
+        return r.json();
+      })
       .then((data) => setProviderConfigured(Boolean(data?.configured)))
       .catch(() => setProviderConfigured(false));
   }, []);
@@ -219,7 +233,17 @@ export const InvoiceScannerTab: React.FC = () => {
     setPostingSuccess(null);
 
     try {
-      const response = await withTimeout(fetch('/api/gemini/analyze-invoice', {
+      let endpoint = '/api/gemini/analyze-invoice';
+      if (typeof window !== 'undefined') {
+        const isCapacitor = (window as any).Capacitor?.isNativePlatform?.() ||
+          window.location.protocol === 'capacitor:' ||
+          (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '');
+        if (isCapacitor) {
+          endpoint = 'https://ais-pre-s3kpf4jbgnycqoblc463mc-177021215798.europe-west2.run.app/api/gemini/analyze-invoice';
+        }
+      }
+
+      const response = await withTimeout(fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -237,6 +261,11 @@ export const InvoiceScannerTab: React.FC = () => {
           }))
         })
       }), 90_000);
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('تعذر معالجة الفاتورة عبر الخادم السحابي حالياً. يرجى التأكد من اتصال الإنترنت.');
+      }
 
       if (!response.ok) {
         const errJson = await response.json().catch(() => ({}));

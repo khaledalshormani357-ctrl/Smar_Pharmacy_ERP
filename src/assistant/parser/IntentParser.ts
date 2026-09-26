@@ -24,6 +24,34 @@ export class IntentParser {
     const raw = (text || '').trim();
     const norm = DomainValidator.normalizeArabic(raw.toLowerCase());
 
+    // 0. Greetings & Identity Queries
+    if (this.isGreeting(norm)) {
+      return {
+        intent: 'GREETING',
+        confidence: 0.99,
+        rawText: raw,
+        params: {}
+      };
+    }
+
+    if (this.isCapabilities(norm)) {
+      return {
+        intent: 'CAPABILITIES',
+        confidence: 0.99,
+        rawText: raw,
+        params: {}
+      };
+    }
+
+    if (this.isPoliteFeedback(norm)) {
+      return {
+        intent: 'FEEDBACK',
+        confidence: 0.99,
+        rawText: raw,
+        params: {}
+      };
+    }
+
     // 1. Help & Guide Intents
     if (this.isGuideOrHelp(norm)) {
       return this.parseGuideIntent(raw, norm);
@@ -197,6 +225,32 @@ export class IntentParser {
   // Private Helper Parsers
   // -------------------------------------------------------------
 
+  private static isGreeting(norm: string): boolean {
+    const greetings = [
+      'مرحبا', 'مرحباً', 'اهلا', 'أهلا', 'أهلاً', 'اهلين', 'أهلين',
+      'السلام عليكم', 'سلام عليكم', 'سلام', 'صباح الخير', 'مساء الخير',
+      'هلا', 'هاي', 'حيّاك', 'حياك', 'أهلاً وسهلاً', 'اهلا وسهلا', 'تحياتي'
+    ];
+    return greetings.some((g) => norm === g || norm.startsWith(g + ' ') || norm.endsWith(' ' + g));
+  }
+
+  private static isCapabilities(norm: string): boolean {
+    const patterns = [
+      'من انت', 'من أنت', 'ماذا تفعل', 'ما هي وظيفتك', 'كيف تساعدني',
+      'ما هي الاوامر', 'ما هي الأوامر', 'الاوامر المتاحة', 'الأوامر المتاحة',
+      'تعليمات المساعد', 'ايش تسوي', 'شنو وظيفتك', 'قدرات المساعد', 'من تكون', 'ما هو دورك'
+    ];
+    return patterns.some((p) => norm.includes(p));
+  }
+
+  private static isPoliteFeedback(norm: string): boolean {
+    const feedback = [
+      'شكرا', 'شكراً', 'مشكور', 'جزاك الله خيرا', 'جزاك الله خير',
+      'تسلم', 'يعطيك العافية', 'الله يعافيك', 'تمام', 'ممتاز', 'عظيم', 'أحسنت', 'احسنت'
+    ];
+    return feedback.some((f) => norm === f || norm.startsWith(f + ' '));
+  }
+
   private static isGuideOrHelp(norm: string): boolean {
     return (
       norm.startsWith('كيف') ||
@@ -282,6 +336,14 @@ export class IntentParser {
         confidence: 0.95,
         rawText: raw,
         params: { topic: 'stock_count' }
+      };
+    }
+    if (norm.includes('تثبيت') || norm.includes('تنزيل') || norm.includes('تحميل') || norm.includes('apk') || norm.includes('تنصيب')) {
+      return {
+        intent: 'GUIDE',
+        confidence: 0.95,
+        rawText: raw,
+        params: { topic: 'app_installation' }
       };
     }
 

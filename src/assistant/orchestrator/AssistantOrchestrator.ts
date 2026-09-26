@@ -12,6 +12,7 @@ import { ActionRegistry } from '../registry/ActionRegistry';
 import { APP_SCREENS_KNOWLEDGE } from '../knowledge/screens';
 import { APP_GUIDES } from '../knowledge/guides';
 import { db } from '../../db/sqlite';
+import { LocalPharmacyEngine } from './LocalPharmacyEngine';
 
 export class AssistantOrchestrator {
   private static pendingConfirmations: Map<
@@ -75,6 +76,19 @@ export class AssistantOrchestrator {
 
       // 3. Dispatch by intent
       switch (parsed.intent) {
+        // --- GREETING & CONVERSATIONAL POLITE INTENTS ---
+        case 'GREETING': {
+          return LocalPharmacyEngine.handleGreeting(context);
+        }
+
+        case 'CAPABILITIES': {
+          return LocalPharmacyEngine.handleCapabilities();
+        }
+
+        case 'FEEDBACK': {
+          return LocalPharmacyEngine.handleFeedback();
+        }
+
         // --- GUIDE & HELP ---
         case 'GUIDE': {
           const topicKey = parsed.params.topic || 'add_product';
@@ -376,6 +390,7 @@ export class AssistantOrchestrator {
 
   /**
    * Forwards natural language / clinical / general questions to the server AI provider
+   * with seamless, instant fallback to LocalPharmacyEngine
    */
   private static async queryAIAssistant(
     query: string,
@@ -383,115 +398,114 @@ export class AssistantOrchestrator {
     history: AssistantMessage[] = [],
     options?: { model?: string; role?: string }
   ): Promise<AssistantMessage> {
+    // Gather safe local pharmacy ERP context facts (no guessing, strictly verified)
+    const state = db.getState();
+    const lowerQ = query.toLowerCase();
+    const matchedProducts = (state.products || [])
+      .filter((p) => !p.deleted_at && p.is_active)
+      .filter((p) => {
+        return (
+          (p.name_ar && p.name_ar.toLowerCase().includes(lowerQ)) ||
+          (p.name_en && p.name_en.toLowerCase().includes(lowerQ)) ||
+          (p.generic_name && p.generic_name.toLowerCase().includes(lowerQ))
+        );
+      })
+      .slice(0, 5)
+      .map((p) => {
+        const batches = (state.batches || []).filter((b) => b.product_id === p.id && b.status === 'active');
+        const stock = batches.reduce((sum, b) => sum + b.current_quantity, 0);
+        return {
+          name_ar: p.name_ar,
+          name_en: p.name_en,
+          generic_name: p.generic_name,
+          total_stock: stock,
+          unit: p.base_unit,
+          selling_price: (p.current_selling_price || 0) / 100
+        };
+      });
+
+    const cashbox = (state.cashboxes || [])[0];
+    const erpContext = {
+      currentScreen: context.currentScreen,
+      user: { name: context.currentUser.full_name || context.currentUser.username, role: context.currentUser.role_id },
+      pharmacyStats: {
+        totalActiveProducts: (state.products || []).filter((p) => !p.deleted_at).length,
+        lowStockProductsCount: (state.products || []).filter((p) => {
+          const stock = (state.batches || [])
+            .filter((b) => b.product_id === p.id && b.status === 'active')
+            .reduce((sum, b) => sum + b.current_quantity, 0);
+          return stock <= p.min_stock_level;
+        }).length,
+        mainCashboxBalance: cashbox ? cashbox.cached_balance / 100 : 0,
+        currency: state.profile?.currency || 'YER'
+      },
+      matchedProductsInDatabase: matchedProducts
+    };
+
     if (!context.isOnline) {
-      return {
-        id: 'msg-' + Date.now(),
-        sender: 'assistant',
-        timestamp: Date.now(),
-        text: 'أنت حالياً في وضع عدم الاتصال (Offline). يمكنك الاستمرار في استخدام أوامر النظام السريعة، البحث في الأصناف، أو الاستفسار عن الأرصدة المخزنية والمالية المحلية.',
-        responseType: 'TEXT'
-      };
+      return LocalPharmacyEngine.generateLocalResponse(query, context, erpContext, options);
     }
 
     try {
-      // Gather safe local pharmacy ERP context facts (no guessing, strictly verified)
-      const state = db.getState();
-      const lowerQ = query.toLowerCase();
-      const matchedProducts = (state.products || [])
-        .filter((p) => !p.deleted_at && p.is_active)
-        .filter((p) => {
-          return (
-            (p.name_ar && p.name_ar.toLowerCase().includes(lowerQ)) ||
-            (p.name_en && p.name_en.toLowerCase().includes(lowerQ)) ||
-            (p.generic_name && p.generic_name.toLowerCase().includes(lowerQ))
-          );
-        })
-        .slice(0, 5)
-        .map((p) => {
-          const batches = (state.batches || []).filter((b) => b.product_id === p.id && b.status === 'active');
-          const stock = batches.reduce((sum, b) => sum + b.current_quantity, 0);
-          return {
-            name_ar: p.name_ar,
-            name_en: p.name_en,
-            generic_name: p.generic_name,
-            total_stock: stock,
-            unit: p.base_unit,
-            selling_price: (p.current_selling_price || 0) / 100
-          };
-        });
-
-      const cashbox = (state.cashboxes || [])[0];
-      const erpContext = {
-        currentScreen: context.currentScreen,
-        user: { name: context.currentUser.full_name || context.currentUser.username, role: context.currentUser.role_id },
-        pharmacyStats: {
-          totalActiveProducts: (state.products || []).filter((p) => !p.deleted_at).length,
-          lowStockProductsCount: (state.products || []).filter((p) => {
-            const stock = (state.batches || [])
-              .filter((b) => b.product_id === p.id && b.status === 'active')
-              .reduce((sum, b) => sum + b.current_quantity, 0);
-            return stock <= p.min_stock_level;
-          }).length,
-          mainCashboxBalance: cashbox ? cashbox.cached_balance / 100 : 0,
-          currency: state.profile?.currency || 'YER'
-        },
-        matchedProductsInDatabase: matchedProducts
-      };
+      // Determine endpoint based on runtime environment (Capacitor Android vs Web)
+      let endpoint = '/api/assistant/chat';
+      if (typeof window !== 'undefined') {
+        const isCapacitor = (window as any).Capacitor?.isNativePlatform?.() ||
+          window.location.protocol === 'capacitor:' ||
+          (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '');
+        if (isCapacitor) {
+          endpoint = 'https://ais-pre-s3kpf4jbgnycqoblc463mc-177021215798.europe-west2.run.app/api/assistant/chat';
+        }
+      }
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 18000); // 18s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
 
-      const res = await fetch('/api/assistant/chat', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: query,
           history: history.slice(-10).map((m) => ({ sender: m.sender, text: m.text })),
           context: erpContext,
-          model: options?.model || 'gemini-3.5-flash',
+          model: options?.model || 'gemini-3.8-flash',
           role: options?.role || 'general'
         }),
         signal: controller.signal
+      }).catch((fetchErr) => {
+        console.warn('AI Cloud Fetch Failed, activating Local Engine:', fetchErr);
+        return null;
       });
 
       clearTimeout(timeoutId);
 
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || `خطأ من خادم المساعد الذكي (${res.status})`);
+      if (!res || !res.ok) {
+        return LocalPharmacyEngine.generateLocalResponse(query, context, erpContext, options);
       }
 
-      const data = await res.json();
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        // Received HTML (such as index.html from SPA catch-all) instead of JSON
+        return LocalPharmacyEngine.generateLocalResponse(query, context, erpContext, options);
+      }
+
+      const data = await res.json().catch(() => null);
+      if (!data || !data.text || data.unconfigured) {
+        return LocalPharmacyEngine.generateLocalResponse(query, context, erpContext, options);
+      }
+
       return {
         id: 'msg-' + Date.now(),
         sender: 'assistant',
         timestamp: Date.now(),
-        text: data.text || 'تمت معالجة السؤال بنجاح.',
+        text: data.text,
         responseType: 'TEXT',
         model: data.model,
         role: data.role,
         latencyMs: data.latencyMs
       };
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        return {
-          id: 'msg-' + Date.now(),
-          sender: 'assistant',
-          timestamp: Date.now(),
-          text: 'انتهت مهلة انتظار الرد من المساعد الذكي (18 ثانية). يرجى التأكد من اتصال الشبكة ثم إعادة المحاولة.',
-          responseType: 'ERROR',
-          data: { errorReason: 'Timeout', canRetry: true, originalQuery: query }
-        };
-      }
-
-      return {
-        id: 'msg-' + Date.now(),
-        sender: 'assistant',
-        timestamp: Date.now(),
-        text: err.message || 'تعذر الاتصال بالمساعد الذكي حالياً.',
-        responseType: 'ERROR',
-        data: { errorReason: err.message, canRetry: true, originalQuery: query }
-      };
+    } catch {
+      return LocalPharmacyEngine.generateLocalResponse(query, context, erpContext, options);
     }
   }
 
