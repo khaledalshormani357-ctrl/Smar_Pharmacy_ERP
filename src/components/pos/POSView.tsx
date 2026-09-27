@@ -82,7 +82,9 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
 
     return products.filter((p) => (
       (p.name_ar && normalizeArabicSearchText(p.name_ar).includes(qArabic)) ||
+      (p.trade_name_ar && normalizeArabicSearchText(p.trade_name_ar).includes(qArabic)) ||
       (p.name_en && p.name_en.toLowerCase().includes(qLower)) ||
+      (p.trade_name_en && p.trade_name_en.toLowerCase().includes(qLower)) ||
       (p.barcode && p.barcode.toLowerCase() === qLower) ||
       (p.generic_name && (p.generic_name.toLowerCase().includes(qLower) || normalizeArabicSearchText(p.generic_name).includes(qArabic))) ||
       p.internal_code.toLowerCase().includes(qLower)

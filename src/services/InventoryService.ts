@@ -129,6 +129,8 @@ export class InventoryService {
         internal_code: data.internal_code?.trim() || 'MED-' + Math.floor(1000 + Math.random() * 9000),
         name_ar: data.name_ar!.trim(),
         name_en: data.name_en?.trim(),
+        trade_name_ar: data.trade_name_ar?.trim() || data.name_ar!.trim(),
+        trade_name_en: data.trade_name_en?.trim() || data.name_en?.trim(),
         generic_name: data.generic_name?.trim(),
         active_ingredient: data.active_ingredient?.trim(),
         strength: data.strength?.trim(),

@@ -126,7 +126,9 @@ export const InventoryView: React.FC = () => {
       const matchesQuery =
         !rawQuery ||
         (p.name_ar && normalizeArabicSearchText(p.name_ar).includes(qArabic)) ||
+        (p.trade_name_ar && normalizeArabicSearchText(p.trade_name_ar).includes(qArabic)) ||
         (p.name_en && p.name_en.toLowerCase().includes(qLower)) ||
+        (p.trade_name_en && p.trade_name_en.toLowerCase().includes(qLower)) ||
         (p.barcode && p.barcode.toLowerCase().includes(qLower)) ||
         (p.generic_name && (p.generic_name.toLowerCase().includes(qLower) || normalizeArabicSearchText(p.generic_name).includes(qArabic))) ||
         (p.active_ingredient && (p.active_ingredient.toLowerCase().includes(qLower) || normalizeArabicSearchText(p.active_ingredient).includes(qArabic))) ||

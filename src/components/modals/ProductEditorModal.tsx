@@ -24,6 +24,7 @@ import { db } from '../../db/sqlite';
 import { Product, UnitConversion, DosageForm } from '../../types';
 import { InventoryService } from '../../services/InventoryService';
 import { Money } from '../../utils/money';
+import { transliterateDrugTradeName } from '../../utils/arabicPhoneticTransliteration';
 
 interface ProductEditorModalProps {
   isOpen: boolean;
@@ -78,6 +79,8 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
   // Form State
   const [nameAr, setNameAr] = useState('');
   const [nameEn, setNameEn] = useState('');
+  const [tradeNameAr, setTradeNameAr] = useState('');
+  const [tradeNameEn, setTradeNameEn] = useState('');
   const [genericName, setGenericName] = useState('');
   const [activeIngredient, setActiveIngredient] = useState('');
   const [strength, setStrength] = useState('');
@@ -146,6 +149,8 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
     if (product) {
       setNameAr(product.name_ar || '');
       setNameEn(product.name_en || '');
+      setTradeNameAr(product.trade_name_ar || product.name_ar || '');
+      setTradeNameEn(product.trade_name_en || product.name_en || '');
       setGenericName(product.generic_name || '');
       setActiveIngredient(product.active_ingredient || '');
       setStrength(product.strength || '');
@@ -186,6 +191,8 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
       // New product defaults
       setNameAr('');
       setNameEn('');
+      setTradeNameAr('');
+      setTradeNameEn('');
       setGenericName('');
       setActiveIngredient('');
       setStrength('');
@@ -336,6 +343,21 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
     setBarcode(randomBarcode);
   };
 
+  // Explicit Arabic Phonetic Transliteration Handler (Part B4)
+  const handleRegenerateArabic = () => {
+    const sourceEn = (tradeNameEn || nameEn).trim();
+    if (!sourceEn) {
+      setErrorMsg('يرجى إدخال الاسم التجاري بالإنجليزية أولاً لإعادة التعريب الصوتي.');
+      return;
+    }
+    const phoneticallyGenerated = transliterateDrugTradeName(sourceEn);
+    if (phoneticallyGenerated) {
+      setNameAr(phoneticallyGenerated);
+      setTradeNameAr(phoneticallyGenerated);
+      setErrorMsg(null);
+    }
+  };
+
   // Save Product and Units
   const handleSave = () => {
     setErrorMsg(null);
@@ -370,6 +392,8 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
         id: product?.id,
         name_ar: nameAr.trim(),
         name_en: nameEn.trim() || undefined,
+        trade_name_ar: (tradeNameAr || nameAr).trim(),
+        trade_name_en: (tradeNameEn || nameEn).trim() || undefined,
         generic_name: genericName.trim() || undefined,
         active_ingredient: activeIngredient.trim() || undefined,
         strength: strength.trim() || undefined,
@@ -568,33 +592,52 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
           {activeTab === 'basic' && (
             <div className="space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Arabic Name */}
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    الاسم التجاري للصنف بالعربية <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={nameAr}
-                    onChange={(e) => setNameAr(e.target.value)}
-                    placeholder="مثال: باراسيتامول 500 ملجم أقراص"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-
-                {/* English Name */}
+                {/* English Trade Name */}
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    الاسم بالإنجليزية (Commercial Name EN)
+                    الاسم التجاري بالإنجليزية (Trade Name EN)
                   </label>
                   <input
                     type="text"
                     value={nameEn}
-                    onChange={(e) => setNameEn(e.target.value)}
-                    placeholder="e.g. Paracetamol 500mg Tablets"
+                    onChange={(e) => {
+                      setNameEn(e.target.value);
+                      setTradeNameEn(e.target.value);
+                    }}
+                    placeholder="Trazol Plus"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-xs focus:border-emerald-500"
                   />
+                </div>
+
+                {/* Arabic Trade Name & Phonetic Regeneration */}
+                <div className="sm:col-span-2 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300">
+                      الاسم التجاري بالعربية <span className="text-rose-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleRegenerateArabic}
+                      className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[11px] font-bold flex items-center gap-1 active:scale-95 transition-all"
+                      title="توليد الاسم التجاري صوتياً بالعربية من الاسم الإنجليزي (مثل: Trazol Plus -> ترازول بلس)"
+                    >
+                      <span>إعادة التعريب</span>
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={nameAr}
+                    onChange={(e) => {
+                      setNameAr(e.target.value);
+                      setTradeNameAr(e.target.value);
+                    }}
+                    placeholder="مثال: ترازول بلس"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    يمكنك تعديل الاسم يدوياً في أي وقت، وسيتم الحفاظ على تعديلاتك دون استبدالها تلقائياً.
+                  </p>
                 </div>
 
                 {/* Dosage Form */}

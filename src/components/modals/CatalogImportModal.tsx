@@ -27,6 +27,12 @@ import {
 import { Product } from '../../types';
 import { useBackHandler } from '../../hooks/useBackHandler';
 import { ErrorBoundary } from '../common/ErrorBoundary';
+import { db } from '../../db/sqlite';
+import {
+  migrateArabicTradeNames,
+  transliterateDrugTradeName,
+  MigrationReport
+} from '../../utils/arabicPhoneticTransliteration';
 
 export type ImportModalState =
   | 'IDLE'
@@ -71,7 +77,10 @@ export const CatalogImportModal: React.FC<CatalogImportModalProps> = ({
   });
   const [importResult, setImportResult] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'preview' | 'report' | 'files'>('preview');
+  const [activeTab, setActiveTab] = useState<'preview' | 'report' | 'files' | 'transliteration'>('preview');
+  const [transliterationReport, setTransliterationReport] = useState<MigrationReport | null>(null);
+  const [isTransliterating, setIsTransliterating] = useState(false);
+  const [transliterationSearch, setTransliterationSearch] = useState('');
 
   // Handle hardware Back button: close modal if not actively importing
   useBackHandler(
@@ -141,6 +150,62 @@ export const CatalogImportModal: React.FC<CatalogImportModalProps> = ({
       return () => clearTimeout(timer);
     }
   }, [isOpen, activeTab, machineState, searchQuery, selectedCategory, loadPreview]);
+
+  // Products from local pharmacy database
+  const localProducts = useMemo(() => {
+    if (!isOpen) return [];
+    return db.getState().products || [];
+  }, [isOpen, machineState, transliterationReport]);
+
+  const transliterationStats = useMemo(() => {
+    const total = localProducts.length;
+    let hasArabic = 0;
+    let pendingEnglishOnly = 0;
+    for (const p of localProducts) {
+      const ar = (p.trade_name_ar || p.name_ar || '').trim();
+      const en = (p.trade_name_en || p.name_en || '').trim();
+      if (ar && /[\u0600-\u06FF]/.test(ar)) {
+        hasArabic++;
+      } else if (en) {
+        pendingEnglishOnly++;
+      }
+    }
+    return { total, hasArabic, pendingEnglishOnly };
+  }, [localProducts]);
+
+  const filteredTransliterationList = useMemo(() => {
+    if (!transliterationSearch.trim()) {
+      return localProducts.slice(0, 80);
+    }
+    const q = transliterationSearch.toLowerCase().trim();
+    return localProducts.filter((p) => {
+      const ar = (p.trade_name_ar || p.name_ar || '').toLowerCase();
+      const en = (p.trade_name_en || p.name_en || '').toLowerCase();
+      const code = (p.internal_code || '').toLowerCase();
+      return ar.includes(q) || en.includes(q) || code.includes(q);
+    }).slice(0, 80);
+  }, [localProducts, transliterationSearch]);
+
+  const handleRunTransliteration = () => {
+    setIsTransliterating(true);
+    setErrorMessage(null);
+    try {
+      let rep: MigrationReport | null = null;
+      db.transaction(() => {
+        const state = db.getState();
+        rep = migrateArabicTradeNames(state.products);
+      });
+      setTransliterationReport(rep);
+      if (onImportComplete) {
+        onImportComplete();
+      }
+    } catch (err: any) {
+      console.error('Transliteration failed:', err);
+      setErrorMessage(err?.message || 'فشلت عملية تعريب الأصناف');
+    } finally {
+      setIsTransliterating(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -336,6 +401,18 @@ export const CatalogImportModal: React.FC<CatalogImportModalProps> = ({
               }`}
             >
               الملفات المصدرية (JSON & CSV)
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('transliteration')}
+              className={`pb-2.5 px-3 font-bold border-b-2 flex items-center gap-1.5 transition-all ${
+                activeTab === 'transliteration'
+                  ? 'border-emerald-600 text-emerald-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>التعريب الصوتي للأسماء ({transliterationStats.pendingEnglishOnly})</span>
             </button>
           </div>
 
@@ -716,6 +793,173 @@ export const CatalogImportModal: React.FC<CatalogImportModalProps> = ({
                     </div>
                     <Download className="w-4 h-4 text-slate-400 group-hover:text-emerald-600" />
                   </a>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'transliteration' && (
+              <div className="space-y-4 text-xs">
+                {/* Intro Card */}
+                <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl flex flex-col md:flex-row md:items-start justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-emerald-950 text-sm">
+                        التعريب الصوتي للأسماء التجارية (Phonetic Transliteration Engine)
+                      </h4>
+                      <p className="text-emerald-800 text-[11px] leading-relaxed mt-1">
+                        يقوم هذا المحرك باشتقاق الأسماء التجارية العربية صوتياً ونطقياً من الاسم التجاري الإنجليزي (مثل <code className="bg-emerald-100 px-1 py-0.5 rounded font-mono">Trazol Plus → ترازول بلس</code>)، مع الالتزام التام بالقواعد الصيدلانية:
+                      </p>
+                      <ul className="mt-2 space-y-1 text-emerald-900 text-[11px] list-disc list-inside">
+                        <li><strong>الحفاظ التام على الأسماء الإنجليزية الأصلية</strong> دون تعديل أو حذف.</li>
+                        <li><strong>منع استبدال أي اسم عربي موجود مسبقاً</strong> أو تم تصحيحه يدوياً من قِبل الصيدلي.</li>
+                        <li><strong>الاشتقاق الصوتي النطقي</strong> وليس الترجمة الحرفية المعنوية.</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isTransliterating || transliterationStats.total === 0}
+                    onClick={handleRunTransliteration}
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold rounded-xl flex items-center justify-center gap-2 shrink-0 shadow-xs transition-all active:scale-95"
+                  >
+                    {isTransliterating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>جاري التعريب...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-4 h-4" />
+                        <span>بدء تعريب الأصناف الآن</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Statistics Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3.5 bg-white border border-slate-200 rounded-2xl">
+                    <span className="text-slate-400 block text-[11px]">إجمالي الأصناف المسجلة</span>
+                    <span className="text-slate-800 font-bold font-mono text-base mt-0.5 block">
+                      {transliterationStats.total} صنف
+                    </span>
+                  </div>
+                  <div className="p-3.5 bg-white border border-slate-200 rounded-2xl">
+                    <span className="text-slate-400 block text-[11px]">أصناف بأسماء عربية معتمدة</span>
+                    <span className="text-emerald-600 font-bold font-mono text-base mt-0.5 block">
+                      {transliterationStats.hasArabic} صنف
+                    </span>
+                  </div>
+                  <div className="p-3.5 bg-white border border-slate-200 rounded-2xl">
+                    <span className="text-slate-400 block text-[11px]">أصناف بانتظار التعريب الصوتي</span>
+                    <span className="text-amber-600 font-bold font-mono text-base mt-0.5 block">
+                      {transliterationStats.pendingEnglishOnly} صنف
+                    </span>
+                  </div>
+                </div>
+
+                {/* Migration Report if executed */}
+                {transliterationReport && (
+                  <div className="p-4 bg-slate-900 text-white rounded-2xl space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span className="font-bold text-xs">نتائج تقرير التعريب الصوتي الأخير</span>
+                      </div>
+                      <span className="text-slate-400 text-[10px]">مكتمل بنجاح</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                      <div className="p-2.5 bg-slate-800/80 rounded-xl">
+                        <span className="text-slate-400 block text-[10px]">أصناف تم فحصها</span>
+                        <span className="font-bold font-mono text-sm text-slate-100 mt-0.5 block">
+                          {transliterationReport.productsScanned}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-emerald-950/60 border border-emerald-800/50 rounded-xl">
+                        <span className="text-emerald-300 block text-[10px]">أسماء تم تعريبها</span>
+                        <span className="font-bold font-mono text-sm text-emerald-400 mt-0.5 block">
+                          {transliterationReport.arabicNamesGenerated}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-slate-800/80 rounded-xl">
+                        <span className="text-slate-400 block text-[10px]">أسماء عربية تم الحفاظ عليها</span>
+                        <span className="font-bold font-mono text-sm text-slate-100 mt-0.5 block">
+                          {transliterationReport.existingArabicNamesPreserved}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-slate-800/80 rounded-xl">
+                        <span className="text-slate-400 block text-[10px]">تخطي (لا يوجد اسم EN)</span>
+                        <span className="font-bold font-mono text-sm text-slate-100 mt-0.5 block">
+                          {transliterationReport.skipped}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Search & Catalog Table Preview */}
+                <div className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h5 className="font-bold text-slate-900 text-xs">
+                      معاينة قائمة الأصناف والأسماء التجارية الثنائية (AR / EN)
+                    </h5>
+                    <div className="relative w-64">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
+                      <input
+                        type="text"
+                        value={transliterationSearch}
+                        onChange={(e) => setTransliterationSearch(e.target.value)}
+                        placeholder="بحث بالاسم العربي أو الإنجليزي..."
+                        className="w-full pl-3 pr-8 py-1.5 rounded-xl border border-slate-200 text-xs focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden max-h-80 overflow-y-auto">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold sticky top-0">
+                        <tr>
+                          <th className="py-2 px-3">الكود</th>
+                          <th className="py-2 px-3">الاسم بالإنجليزية (Trade Name EN)</th>
+                          <th className="py-2 px-3">الاسم بالعربية (Trade Name AR)</th>
+                          <th className="py-2 px-3">الشكل والوحدة</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredTransliterationList.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="py-8 text-center text-slate-400">
+                              لا توجد أصناف مطابقة للبحث
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredTransliterationList.map((p) => (
+                            <tr key={p.id} className="hover:bg-slate-50/70">
+                              <td className="py-2 px-3 font-mono text-[11px] text-slate-400">
+                                {p.internal_code || p.code || p.id.slice(-6)}
+                              </td>
+                              <td className="py-2 px-3 font-mono font-medium text-slate-800">
+                                {p.trade_name_en || p.name_en || '-'}
+                              </td>
+                              <td className="py-2 px-3 font-bold text-emerald-900">
+                                {p.trade_name_ar || p.name_ar || (
+                                  <span className="text-amber-600 font-normal">بانتظار التعريب</span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3 text-slate-500">
+                                {p.dosage_form} • {p.base_unit}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}

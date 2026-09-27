@@ -13,6 +13,7 @@ import {
   Plus,
   Trash2,
   RefreshCw,
+  RotateCcw,
   FileText,
   Info,
   Check,
@@ -36,6 +37,7 @@ interface ExtractedItem {
   expiry_date: string;
   quantity: number;
   unit_name: string;
+  unit_factor?: number;
   unit_purchase_price: number; // in normal currency (e.g. 1500)
   unit_selling_price: number;  // in normal currency (e.g. 2000)
   discount_amount?: number;
@@ -69,10 +71,10 @@ export const InvoiceScannerTab: React.FC = () => {
   React.useEffect(() => {
     let statusUrl = '/api/assistant/status';
     if (typeof window !== 'undefined') {
-      const isCapacitor = (window as any).Capacitor?.isNativePlatform?.() ||
+      const isCapacitorNative = (window as any).Capacitor?.isNativePlatform?.() ||
         window.location.protocol === 'capacitor:' ||
-        (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '');
-      if (isCapacitor) {
+        window.location.protocol === 'file:';
+      if (isCapacitorNative) {
         statusUrl = 'https://ais-pre-s3kpf4jbgnycqoblc463mc-177021215798.europe-west2.run.app/api/assistant/status';
       }
     }
@@ -235,10 +237,10 @@ export const InvoiceScannerTab: React.FC = () => {
     try {
       let endpoint = '/api/gemini/analyze-invoice';
       if (typeof window !== 'undefined') {
-        const isCapacitor = (window as any).Capacitor?.isNativePlatform?.() ||
+        const isCapacitorNative = (window as any).Capacitor?.isNativePlatform?.() ||
           window.location.protocol === 'capacitor:' ||
-          (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '');
-        if (isCapacitor) {
+          window.location.protocol === 'file:';
+        if (isCapacitorNative) {
           endpoint = 'https://ais-pre-s3kpf4jbgnycqoblc463mc-177021215798.europe-west2.run.app/api/gemini/analyze-invoice';
         }
       }
@@ -262,14 +264,22 @@ export const InvoiceScannerTab: React.FC = () => {
         })
       }), 90_000);
 
+      if (!response.ok) {
+        let errMsg = `فشل الاتصال بخدمة التحليل (${response.status})`;
+        try {
+          const errJson = await response.json();
+          if (errJson && errJson.error) {
+            errMsg = errJson.error;
+          }
+        } catch {
+          // not json
+        }
+        throw new Error(errMsg);
+      }
+
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         throw new Error('تعذر معالجة الفاتورة عبر الخادم السحابي حالياً. يرجى التأكد من اتصال الإنترنت.');
-      }
-
-      if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.error || `فشل الاتصال بالخادم (${response.status})`);
       }
 
       const rawResult = await response.json();
@@ -297,9 +307,19 @@ export const InvoiceScannerTab: React.FC = () => {
           }
         }
 
+        const detectedUnit = (it.unit_name || it.unit || 'علبة').trim();
+        let matchedFactor = 1;
+        if (matchedId) {
+          const convs = (state.unit_conversions || []).filter((uc) => uc.product_id === matchedId && uc.is_active !== false);
+          const foundConv = convs.find((uc) => uc.unit_name.trim() === detectedUnit);
+          if (foundConv) {
+            matchedFactor = foundConv.conversion_factor;
+          }
+        }
+
         const purchasePrice = typeof it.unit_purchase_price === 'number'
           ? it.unit_purchase_price
-          : parseFloat(String(it.unit_purchase_price || '0').replace(/[^0-9.]/g, '')) || 0;
+          : (typeof it.unit_price === 'number' ? it.unit_price : parseFloat(String(it.unit_purchase_price || it.unit_price || '0').replace(/[^0-9.]/g, '')) || 0);
 
         const sellingPrice = typeof it.unit_selling_price === 'number'
           ? it.unit_selling_price
@@ -307,15 +327,16 @@ export const InvoiceScannerTab: React.FC = () => {
 
         return {
           id: 'ext-' + idx + '-' + Math.random().toString(36).substring(2, 6),
-          raw_name: it.raw_name || it.product_name_ar || `صنف دوائي #${idx + 1}`,
-          product_name_ar: it.product_name_ar || it.raw_name || `صنف دوائي #${idx + 1}`,
+          raw_name: it.raw_name || it.trade_name_original || it.product_name_ar || `صنف دوائي #${idx + 1}`,
+          product_name_ar: it.product_name_ar || it.trade_name_ar || it.raw_name || `صنف دوائي #${idx + 1}`,
           product_name_en: it.product_name_en || '',
           matched_product_id: matchedId,
           is_new_product: !matchedId,
           batch_number: it.batch_number || '',
           expiry_date: it.expiry_date || '',
-          quantity: Math.max(0, parseInt(String(it.quantity || 0), 10)),
-          unit_name: it.unit_name || '',
+          quantity: Math.max(1, parseInt(String(it.quantity || 1), 10)),
+          unit_name: detectedUnit,
+          unit_factor: matchedFactor,
           unit_purchase_price: purchasePrice,
           unit_selling_price: sellingPrice,
           discount_amount: it.discount_amount || 0
@@ -457,12 +478,24 @@ export const InvoiceScannerTab: React.FC = () => {
           finalProductId = newProdId;
         }
 
+        // Resolve unit factor
+        let finalFactor = item.unit_factor || 1;
+        if (finalProductId) {
+          const convs = (state.unit_conversions || []).filter(
+            (uc) => uc.product_id === finalProductId && uc.is_active !== false
+          );
+          const matchedConv = convs.find((uc) => uc.unit_name.trim() === (item.unit_name || '').trim());
+          if (matchedConv) {
+            finalFactor = matchedConv.conversion_factor;
+          }
+        }
+
         return {
           product_id: finalProductId,
           batch_number: item.batch_number.trim().toUpperCase() || 'BN-GENERIC',
           expiry_date: item.expiry_date,
-          unit_name: item.unit_name || 'باكت',
-          unit_factor: 1,
+          unit_name: item.unit_name || 'علبة',
+          unit_factor: finalFactor,
           quantity: item.quantity,
           unit_purchase_price: Money.toMinor(item.unit_purchase_price),
           unit_selling_price: Money.toMinor(item.unit_selling_price),
@@ -549,11 +582,24 @@ export const InvoiceScannerTab: React.FC = () => {
         </div>
       )}
 
-      {/* Error Alert */}
+      {/* Error Alert with Retry Option */}
       {error && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl flex items-center gap-2.5">
-          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-          <span className="font-medium flex-1">{error}</span>
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <span className="font-medium text-xs">{error}</span>
+          </div>
+          {imageSrc && (
+            <button
+              type="button"
+              disabled={analyzing}
+              onClick={handleAnalyzeInvoice}
+              className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all shrink-0 self-end sm:self-auto"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>إعادة المحاولة</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -801,6 +847,7 @@ export const InvoiceScannerTab: React.FC = () => {
                   <thead className="bg-slate-100 text-slate-600 font-bold text-[11px] sticky top-0 z-10 border-b border-slate-200">
                     <tr>
                       <th className="p-2.5">الصنف في الفاتورة والربط</th>
+                      <th className="p-2.5 w-24">الوحدة</th>
                       <th className="p-2.5 w-28">رقم التشغيلة</th>
                       <th className="p-2.5 w-28">الصلاحية</th>
                       <th className="p-2.5 w-20">الكمية</th>
@@ -813,6 +860,12 @@ export const InvoiceScannerTab: React.FC = () => {
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {invoiceData.items.map((item) => {
                       const itemTotal = (item.quantity * item.unit_purchase_price) - (item.discount_amount || 0);
+                      const prod = item.matched_product_id ? products.find((p) => p.id === item.matched_product_id) : null;
+                      const convs = prod ? (state.unit_conversions || []).filter((uc) => uc.product_id === prod.id && uc.is_active !== false) : [];
+                      const availableUnits = prod ? [
+                        prod.base_unit || 'حبة',
+                        ...convs.map((c) => c.unit_name).filter((u) => u !== (prod.base_unit || 'حبة'))
+                      ] : ['علبة', 'باكت', 'شريط', 'حبة', 'زجاجة', 'أمبول', 'فيال'];
 
                       return (
                         <tr key={item.id} className="hover:bg-slate-50/70">
@@ -849,6 +902,28 @@ export const InvoiceScannerTab: React.FC = () => {
                                 ))}
                               </select>
                             </div>
+                          </td>
+                          <td className="p-2">
+                            <select
+                              value={item.unit_name}
+                              onChange={(e) => {
+                                const selectedUnit = e.target.value;
+                                const foundConv = convs.find((c) => c.unit_name.trim() === selectedUnit.trim());
+                                const newFactor = foundConv ? foundConv.conversion_factor : 1;
+                                updateItem(item.id, {
+                                  unit_name: selectedUnit,
+                                  unit_factor: newFactor
+                                });
+                              }}
+                              className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                            >
+                              {!availableUnits.includes(item.unit_name) && item.unit_name && (
+                                <option value={item.unit_name}>{item.unit_name} (مكتشفة)</option>
+                              )}
+                              {availableUnits.map((u) => (
+                                <option key={u} value={u}>{u}</option>
+                              ))}
+                            </select>
                           </td>
                           <td className="p-2">
                             <input
@@ -913,6 +988,26 @@ export const InvoiceScannerTab: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Total Validation Warning (Part C13) */}
+          {(() => {
+            const localSum = invoiceData.items.reduce(
+              (acc, it) => acc + (it.quantity * it.unit_purchase_price) - (it.discount_amount || 0),
+              0
+            );
+            const extractedTotal = invoiceData.total_amount;
+            if (extractedTotal && Math.abs(localSum - extractedTotal) > 1) {
+              return (
+                <div className="p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl flex items-center gap-2 text-xs font-bold">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    تنبيه: الإجمالي المستخرج ({Money.format(Money.toMinor(extractedTotal))}) لا يطابق مجموع الأصناف ({Money.format(Money.toMinor(localSum))}). يرجى المراجعة قبل الحفظ.
+                  </span>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           {/* Footer Actions & Post Button */}
           <div className="p-4 bg-slate-900 text-white rounded-2xl flex flex-wrap items-center justify-between gap-4">

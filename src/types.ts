@@ -71,6 +71,8 @@ export interface Product {
   code?: string;
   name_ar: string;
   name_en?: string;
+  trade_name_ar?: string;
+  trade_name_en?: string;
   generic_name?: string;
   active_ingredient?: string;
   strength?: string;

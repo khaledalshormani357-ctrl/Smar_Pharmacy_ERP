@@ -161,8 +161,10 @@ export class ProductRepository {
         continue;
       }
 
-      const nAr = normalizeArabicSearchText(p.name_ar);
+      const nAr = normalizeArabicSearchText(p.name_ar || '');
+      const nTradeAr = normalizeArabicSearchText(p.trade_name_ar || '');
       const nEn = (p.name_en || '').toLowerCase();
+      const nTradeEn = (p.trade_name_en || '').toLowerCase();
       const nGen = normalizeArabicSearchText(p.generic_name || '');
       const nAct = normalizeArabicSearchText(p.active_ingredient || '');
       const nCode = (p.internal_code || '').toLowerCase();
@@ -171,7 +173,9 @@ export class ProductRepository {
 
       if (
         nAr.includes(norm) ||
+        nTradeAr.includes(norm) ||
         nEn.includes(norm) ||
+        nTradeEn.includes(norm) ||
         nGen.includes(norm) ||
         nAct.includes(norm) ||
         nCode.includes(norm) ||

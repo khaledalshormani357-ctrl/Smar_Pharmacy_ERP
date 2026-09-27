@@ -99,6 +99,13 @@ function classifyError(err: any): { code: string; message: string; httpStatus: n
       httpStatus: 429,
     };
   }
+  if (status === 503 || /unavailable|high demand|overloaded/i.test(errMsg)) {
+    return {
+      code: 'PROVIDER_ERROR',
+      message: 'مزود الذكاء الاصطناعي يواجه ضغطاً مؤقتاً في الطلبات. يرجى إعادة المحاولة بعد لحظات.',
+      httpStatus: 503,
+    };
+  }
   if (/timeout|abort|deadline/i.test(errMsg)) {
     return {
       code: 'AI_TIMEOUT',
@@ -490,43 +497,122 @@ ${JSON.stringify((existingProducts || []).slice(0, 60).map((p: any) => ({ id: p.
 
       console.log(`[Invoice Vision AI] Analyzing invoice image, mime=${detectedMime}`);
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType: detectedMime,
-                data: base64Data,
+      let response: any = null;
+      let lastErr: any = null;
+      let usedModel = '';
+
+      // Resilient model sequence for Vision OCR:
+      // Primary: gemini-3.8-flash -> Fallbacks: gemini-flash-latest -> gemini-3.1-flash-lite
+      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+
+      for (const modelName of candidateModels) {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            console.log(`[Invoice Vision AI] Attempting model ${modelName} (attempt ${attempt + 1})...`);
+            response = await ai.models.generateContent({
+              model: modelName,
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    {
+                      inlineData: {
+                        mimeType: detectedMime,
+                        data: base64Data,
+                      },
+                    },
+                    {
+                      text: prompt,
+                    },
+                  ],
+                },
+              ],
+              config: {
+                responseMimeType: 'application/json',
+                temperature: 0.1,
               },
-            },
-            {
-              text: prompt,
-            },
-          ],
-        },
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.1,
-        },
-      });
+            });
+            if (response && response.text) {
+              usedModel = modelName;
+              break;
+            }
+          } catch (err: any) {
+            lastErr = err;
+            const status = err?.status || err?.statusCode;
+            console.warn(`[Invoice Vision AI] Model ${modelName} attempt ${attempt + 1} failed: status=${status}, msg=${err?.message}`);
+            // If model is overloaded or experiencing 503 high demand, immediately fallback to next model
+            if (status === 503 || /high demand|unavailable|overloaded/i.test(err?.message || '')) {
+              break;
+            }
+            if (attempt === 0) {
+              await new Promise((resolve) => setTimeout(resolve, 800));
+            }
+          }
+        }
+        if (response && response.text) break;
+      }
+
+      if (!response || !response.text) {
+        throw lastErr || new Error('INVALID_AI_RESPONSE');
+      }
 
       const latency = Date.now() - startTime;
       const rawText = (response.text || '{}').trim();
-      const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      const cleanJson = jsonMatch ? jsonMatch[0] : rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
 
       let parsed: any;
       try {
         parsed = JSON.parse(cleanJson);
       } catch (jsonErr) {
         return res.status(502).json({
-          code: 'AI_RESPONSE_VALIDATION_FAILED',
+          code: 'JSON_PARSE_ERROR',
           error: 'تعذر التحقق من هيكل البيانات المستخرجة من الفاتورة.',
         });
       }
 
+      // Ensure required schema keys for C8 and backward compatibility
+      const sanitized = {
+        supplier: parsed.supplier || parsed.supplier_name || '',
+        supplier_name: parsed.supplier_name || parsed.supplier || '',
+        invoice_number: parsed.invoice_number || '',
+        invoice_date: parsed.invoice_date || '',
+        currency: parsed.currency || 'YER',
+        payment_type: parsed.payment_type || 'credit',
+        subtotal: typeof parsed.subtotal === 'number' ? parsed.subtotal : (typeof parsed.total_amount === 'number' ? parsed.total_amount : null),
+        discount: typeof parsed.discount === 'number' ? parsed.discount : (typeof parsed.discount_amount === 'number' ? parsed.discount_amount : 0),
+        tax: typeof parsed.tax === 'number' ? parsed.tax : 0,
+        grand_total: typeof parsed.grand_total === 'number' ? parsed.grand_total : (typeof parsed.total_amount === 'number' ? parsed.total_amount : null),
+        total_amount: typeof parsed.total_amount === 'number' ? parsed.total_amount : (typeof parsed.grand_total === 'number' ? parsed.grand_total : null),
+        confidence_notes: Array.isArray(parsed.confidence_notes) ? parsed.confidence_notes : [],
+        model: usedModel,
+        items: Array.isArray(parsed.items)
+          ? parsed.items.map((it: any) => ({
+              trade_name_original: it.trade_name_original || it.raw_name || '',
+              raw_name: it.raw_name || it.trade_name_original || '',
+              trade_name_ar: it.trade_name_ar || it.product_name_ar || '',
+              product_name_ar: it.product_name_ar || it.trade_name_ar || '',
+              product_name_en: it.product_name_en || '',
+              quantity: typeof it.quantity === 'number' ? it.quantity : (parseFloat(it.quantity) || 1),
+              unit: it.unit || it.unit_name || 'علبة',
+              unit_name: it.unit_name || it.unit || 'علبة',
+              unit_price: typeof it.unit_price === 'number' ? it.unit_price : (typeof it.unit_purchase_price === 'number' ? it.unit_purchase_price : null),
+              unit_purchase_price: typeof it.unit_purchase_price === 'number' ? it.unit_purchase_price : (typeof it.unit_price === 'number' ? it.unit_price : null),
+              unit_selling_price: typeof it.unit_selling_price === 'number' ? it.unit_selling_price : null,
+              total: typeof it.total === 'number' ? it.total : (it.quantity && it.unit_price ? it.quantity * it.unit_price : null),
+              discount_amount: typeof it.discount_amount === 'number' ? it.discount_amount : 0,
+              barcode: it.barcode || '',
+              manufacturer: it.manufacturer || '',
+              expiry_date: it.expiry_date || '',
+              batch_number: it.batch_number || '',
+              matched_product_id: it.matched_product_id || undefined,
+              matched_supplier_id: it.matched_supplier_id || undefined,
+            }))
+          : [],
+      };
+
       console.log(`[Invoice Vision AI] Analysis completed successfully (${latency}ms)`);
-      return res.json(parsed);
+      return res.json(sanitized);
     } catch (err: any) {
       const latency = Date.now() - startTime;
       const classified = classifyError(err);

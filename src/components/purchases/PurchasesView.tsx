@@ -69,6 +69,8 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
 
   // Item selector in modal
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [selectedUnitName, setSelectedUnitName] = useState('');
+  const [selectedUnitFactor, setSelectedUnitFactor] = useState(1);
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [showProductDropdown, setShowProductDropdown] = useState(false);
   const [batchNo, setBatchNo] = useState('');
@@ -122,7 +124,9 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
 
     return products.filter((p) => {
       const nAr = normalizeArabicSearchText(p.name_ar || '');
+      const nTradeAr = normalizeArabicSearchText(p.trade_name_ar || '');
       const nEn = (p.name_en || '').toLowerCase();
+      const nTradeEn = (p.trade_name_en || '').toLowerCase();
       const nGen = normalizeArabicSearchText(p.generic_name || '');
       const nAct = normalizeArabicSearchText(p.active_ingredient || '');
       const nCode = (p.internal_code || '').toLowerCase();
@@ -131,7 +135,9 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
 
       return (
         nAr.includes(norm) ||
+        nTradeAr.includes(norm) ||
         nEn.includes(lower) ||
+        nTradeEn.includes(lower) ||
         nGen.includes(norm) ||
         nAct.includes(norm) ||
         nCode.includes(lower) ||
@@ -141,10 +147,78 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
     }).slice(0, 25);
   }, [products, productSearchTerm, manufacturersMap]);
 
+  const availableUnitsForSelectedProduct = useMemo(() => {
+    if (!selectedProductId) return [];
+    const prod = products.find((p) => p.id === selectedProductId);
+    if (!prod) return [];
+    const state = db.getState();
+    const convs = (state.unit_conversions || []).filter(
+      (uc) => uc.product_id === prod.id && uc.is_active !== false
+    );
+    const list = [
+      {
+        unit_name: prod.base_unit || 'حبة',
+        conversion_factor: 1,
+        purchase_price: prod.current_purchase_price,
+        selling_price: prod.current_selling_price
+      }
+    ];
+    for (const c of convs) {
+      if (c.unit_name.trim() !== (prod.base_unit || 'حبة').trim()) {
+        list.push({
+          unit_name: c.unit_name,
+          conversion_factor: c.conversion_factor,
+          purchase_price: c.purchase_price !== undefined ? c.purchase_price : prod.current_purchase_price * c.conversion_factor,
+          selling_price: c.selling_price || prod.current_selling_price * c.conversion_factor
+        });
+      }
+    }
+    return list;
+  }, [selectedProductId, products]);
+
+  const handleUnitChange = (newUnitName: string) => {
+    const targetUnit = availableUnitsForSelectedProduct.find((u) => u.unit_name === newUnitName);
+    if (!targetUnit) return;
+    setSelectedUnitName(targetUnit.unit_name);
+    setSelectedUnitFactor(targetUnit.conversion_factor);
+    if (targetUnit.purchase_price !== undefined && targetUnit.purchase_price > 0) {
+      setPPrice(Money.toMajor(targetUnit.purchase_price));
+    } else {
+      const prod = products.find((p) => p.id === selectedProductId);
+      const baseBuy = prod ? prod.current_purchase_price : 0;
+      setPPrice(Money.toMajor(baseBuy * targetUnit.conversion_factor));
+    }
+    if (targetUnit.selling_price > 0) {
+      setSPrice(Money.toMajor(targetUnit.selling_price));
+    } else {
+      const prod = products.find((p) => p.id === selectedProductId);
+      const baseSell = prod ? prod.current_selling_price : 0;
+      setSPrice(Money.toMajor(baseSell * targetUnit.conversion_factor));
+    }
+  };
+
   const handleSelectProduct = (p: Product) => {
     setSelectedProductId(p.id);
-    setPPrice(Money.toMajor(p.current_purchase_price));
-    setSPrice(Money.toMajor(p.current_selling_price));
+    const state = db.getState();
+    const convs = (state.unit_conversions || []).filter(
+      (uc) => uc.product_id === p.id && uc.is_active !== false
+    );
+    const defaultUnit = convs.find((c) => c.is_default_sale) || {
+      unit_name: p.base_unit || 'حبة',
+      conversion_factor: 1,
+      purchase_price: p.current_purchase_price,
+      selling_price: p.current_selling_price
+    };
+    setSelectedUnitName(defaultUnit.unit_name);
+    setSelectedUnitFactor(defaultUnit.conversion_factor);
+    const buyPrice = defaultUnit.purchase_price !== undefined && defaultUnit.purchase_price > 0
+      ? defaultUnit.purchase_price
+      : p.current_purchase_price * defaultUnit.conversion_factor;
+    const sellPrice = defaultUnit.selling_price > 0
+      ? defaultUnit.selling_price
+      : p.current_selling_price * defaultUnit.conversion_factor;
+    setPPrice(Money.toMajor(buyPrice));
+    setSPrice(Money.toMajor(sellPrice));
     setProductSearchTerm('');
     setShowProductDropdown(false);
   };
@@ -207,8 +281,8 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
         product_id: prod.id,
         batch_number: batchNo.trim().toUpperCase(),
         expiry_date: expiryDate,
-        unit_name: prod.base_unit,
-        unit_factor: 1,
+        unit_name: selectedUnitName || prod.base_unit,
+        unit_factor: selectedUnitFactor || 1,
         quantity: qty,
         unit_purchase_price: Money.toMinor(pPrice),
         unit_selling_price: Money.toMinor(sPrice)
@@ -217,6 +291,8 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
 
     // Reset item form
     setSelectedProductId('');
+    setSelectedUnitName('');
+    setSelectedUnitFactor(1);
     setProductSearchTerm('');
     setShowProductDropdown(false);
     setBatchNo('');
@@ -778,17 +854,31 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div>
                     <label className="block text-slate-500 text-[10px] mb-0.5">الكمية</label>
                     <NumericInput value={qty} onChange={setQty} className="py-1 text-xs text-center" />
                   </div>
                   <div>
-                    <label className="block text-slate-500 text-[10px] mb-0.5">سعر الشراء</label>
+                    <label className="block text-slate-500 text-[10px] mb-0.5">الوحدة الموردة</label>
+                    <select
+                      value={selectedUnitName}
+                      onChange={(e) => handleUnitChange(e.target.value)}
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                    >
+                      {availableUnitsForSelectedProduct.map((u) => (
+                        <option key={u.unit_name} value={u.unit_name}>
+                          {u.unit_name} {u.conversion_factor > 1 ? `(×${u.conversion_factor})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-500 text-[10px] mb-0.5">سعر الشراء للوحدة</label>
                     <NumericInput value={pPrice} onChange={setPPrice} className="py-1 text-xs" />
                   </div>
                   <div>
-                    <label className="block text-slate-500 text-[10px] mb-0.5">سعر البيع</label>
+                    <label className="block text-slate-500 text-[10px] mb-0.5">سعر البيع المقترح</label>
                     <NumericInput value={sPrice} onChange={setSPrice} className="py-1 text-xs" />
                   </div>
                 </div>
@@ -817,7 +907,7 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-bold">
-                            {it.quantity} × {Money.format(it.unit_purchase_price)}
+                            {it.quantity} {it.unit_name} × {Money.format(it.unit_purchase_price)}
                           </span>
                           <button
                             type="button"
