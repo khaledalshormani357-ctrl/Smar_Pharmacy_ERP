@@ -331,7 +331,23 @@ export class ProductRepository {
   }
 
   static deactivate(id: string, userId = 'user-01'): void {
-    this.deleteOrArchive(id, userId);
+    db.transaction(() => {
+      const state = db.getState();
+      const product = state.products.find((p) => p.id === id);
+      if (!product) throw new Error('الصنف غير موجود.');
+
+      const before = { ...product };
+      product.is_active = false;
+      product.updated_at = Date.now();
+
+      state.audit_logs.push(
+        AuditManager.createLog(userId, 'DEACTIVATE', 'product', id, state.profile.device_id, {
+          reason: 'تعطيل الصنف ' + product.name_ar,
+          payloadBefore: before,
+          payloadAfter: product
+        })
+      );
+    });
   }
 
   static activate(id: string, userId = 'user-01'): void {

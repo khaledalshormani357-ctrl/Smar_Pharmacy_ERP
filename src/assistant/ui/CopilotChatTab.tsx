@@ -35,6 +35,7 @@ import { ProductCardView } from './ProductCardView';
 import { BalanceCardView } from './BalanceCardView';
 import { ConfirmationCard } from './ConfirmationCard';
 import { User } from '../../types';
+import { NetworkStatusService, NetworkState } from '../../services/NetworkStatusService';
 
 interface CopilotChatTabProps {
   currentUser: User;
@@ -194,18 +195,18 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
     errorCode?: string;
     lastError: string | null;
   } | null>(null);
+  const [networkState, setNetworkState] = useState<NetworkState>(NetworkStatusService.getStatus());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let statusUrl = '/api/assistant/status';
-    if (typeof window !== 'undefined') {
-      const isCapacitor = (window as any).Capacitor?.isNativePlatform?.() ||
-        window.location.protocol === 'capacitor:' ||
-        (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '');
-      if (isCapacitor) {
-        statusUrl = 'https://ais-pre-s3kpf4jbgnycqoblc463mc-177021215798.europe-west2.run.app/api/assistant/status';
-      }
-    }
+    const unsub = NetworkStatusService.addListener((state) => {
+      setNetworkState(state);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const statusUrl = NetworkStatusService.resolveApiEndpoint('/api/assistant/status');
 
     fetch(statusUrl)
       .then((r) => {
@@ -260,7 +261,7 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
   const context: AssistantContext = {
     currentUser,
     currentScreen,
-    isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+    isOnline: networkState === 'ONLINE',
     navigateTo: (screen, section) => {
       onNavigate(screen, section);
       onCloseModal();
@@ -380,6 +381,15 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
             {activeRoleConfig.title}
           </span>
           <span className="text-slate-300 dark:text-slate-700">|</span>
+          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+            networkState === 'ONLINE'
+              ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+              : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${networkState === 'ONLINE' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+            <span>{networkState === 'ONLINE' ? 'AI Online' : 'AI Offline'}</span>
+          </span>
+          <span className="text-slate-300 dark:text-slate-700">|</span>
           <select
             value={selectedModel}
             onChange={(e) => setSelectedModel(e.target.value as GeminiChatModel)}
@@ -407,6 +417,8 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
       <div className={`border-b px-3 py-1.5 text-2xs flex items-center justify-between gap-2 shrink-0 ${
         aiStatus?.configured && aiStatus?.reachable
           ? 'bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-200/80 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-200'
+          : !aiStatus?.configured
+          ? 'bg-amber-50/90 dark:bg-amber-950/40 border-amber-200/80 dark:border-amber-900/60 text-amber-900 dark:text-amber-200'
           : 'bg-indigo-50/90 dark:bg-indigo-950/40 border-indigo-200/80 dark:border-indigo-900/60 text-indigo-900 dark:text-indigo-200'
       }`}>
         <div className="flex items-center gap-1.5 min-w-0 truncate">
@@ -414,6 +426,8 @@ export const CopilotChatTab: React.FC<CopilotChatTabProps> = ({
           <span className="truncate font-medium">
             {aiStatus?.configured && aiStatus?.reachable
               ? 'متصل بالذكاء السحابي Google Gemini + قاعدة البيانات الصيدلانية'
+              : !aiStatus?.configured
+              ? 'المساعد الذكي غير مُهيأ بعد (يرجى إعداد مفتاح GEMINI_API_KEY على الخادم)'
               : 'محرك الذكاء الصيدلاني المدمج نشط (جاهز لخدمتك محلياً وسحابياً 100%)'}
           </span>
         </div>

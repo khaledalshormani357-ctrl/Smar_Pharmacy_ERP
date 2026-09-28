@@ -211,6 +211,13 @@ export class FirebaseSyncServiceClass {
   }
 
   /**
+   * Alias for processOutbox
+   */
+  async syncPendingOutbox(onProgress?: (msg: string, percent: number) => void) {
+    return this.processOutbox(onProgress);
+  }
+
+  /**
    * Dispatch single Outbox entry to appropriate Firestore collection
    */
   private async syncOutboxItemToCloud(pharmacyId: string, entry: SyncOutboxEntry): Promise<void> {
@@ -353,11 +360,33 @@ export class FirebaseSyncServiceClass {
         break;
       }
 
+      case 'purchase': {
+        const path = `pharmacies/${pharmacyId}/purchases/${entry.entity_id}`;
+        await setDoc(doc(firestoreDb, path), {
+          id: entry.entity_id,
+          invoiceNumber: payload.invoice_number,
+          internalNumber: payload.internal_number || '',
+          supplierId: payload.supplier_id,
+          subtotal: payload.subtotal || 0,
+          discountAmount: payload.discount_amount || 0,
+          taxAmount: payload.tax_amount || 0,
+          netTotal: payload.net_total || 0,
+          paidAmount: payload.paid_amount || 0,
+          remainingAmount: payload.remaining_amount || 0,
+          paymentType: payload.payment_type || 'cash',
+          status: payload.status || 'posted',
+          purchaseDate: payload.purchase_date || new Date().toISOString().split('T')[0],
+          createdAt: payload.created_at ? new Date(payload.created_at).toISOString() : new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        break;
+      }
+
       case 'supplier': {
         const path = `pharmacies/${pharmacyId}/suppliers/${entry.entity_id}`;
         await setDoc(doc(firestoreDb, path), {
           id: entry.entity_id,
-          name: payload.name,
+          name: payload.name || payload.name_ar,
           contactPerson: payload.contact_person || '',
           phone: payload.phone || '',
           balance: payload.cached_balance || 0,

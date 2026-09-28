@@ -113,6 +113,13 @@ function classifyError(err: any): { code: string; message: string; httpStatus: n
       httpStatus: 504,
     };
   }
+  if (/validation failed|schema error|invalid format/i.test(errMsg)) {
+    return {
+      code: 'AI_RESPONSE_VALIDATION_FAILED',
+      message: 'فشل التحقق من صحة استجابة مزود الذكاء الاصطناعي.',
+      httpStatus: 502,
+    };
+  }
   if (/network|econnrefused|fetch failed|enotfound/i.test(errMsg)) {
     return {
       code: 'AI_NETWORK_ERROR',
@@ -540,8 +547,8 @@ ${JSON.stringify((existingProducts || []).slice(0, 60).map((p: any) => ({ id: p.
             lastErr = err;
             const status = err?.status || err?.statusCode;
             console.warn(`[Invoice Vision AI] Model ${modelName} attempt ${attempt + 1} failed: status=${status}, msg=${err?.message}`);
-            // If model is overloaded or experiencing 503 high demand, immediately fallback to next model
-            if (status === 503 || /high demand|unavailable|overloaded/i.test(err?.message || '')) {
+            // If model is overloaded, quota exhausted, or experiencing 503/429 high demand, immediately fallback to next model
+            if (status === 503 || status === 429 || /high demand|unavailable|overloaded|quota|resource_exhausted|rate limit/i.test(err?.message || '')) {
               break;
             }
             if (attempt === 0) {

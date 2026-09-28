@@ -13,6 +13,7 @@ import { APP_SCREENS_KNOWLEDGE } from '../knowledge/screens';
 import { APP_GUIDES } from '../knowledge/guides';
 import { db } from '../../db/sqlite';
 import { LocalPharmacyEngine } from './LocalPharmacyEngine';
+import { NetworkStatusService } from '../../services/NetworkStatusService';
 
 export class AssistantOrchestrator {
   private static pendingConfirmations: Map<
@@ -442,21 +443,13 @@ export class AssistantOrchestrator {
       matchedProductsInDatabase: matchedProducts
     };
 
-    if (!context.isOnline) {
+    const isNetworkAvailable = NetworkStatusService.isOnline() && (context.isOnline ?? true);
+    if (!isNetworkAvailable) {
       return LocalPharmacyEngine.generateLocalResponse(query, context, erpContext, options);
     }
 
     try {
-      // Determine endpoint based on runtime environment (Capacitor Android vs Web)
-      let endpoint = '/api/assistant/chat';
-      if (typeof window !== 'undefined') {
-        const isCapacitor = (window as any).Capacitor?.isNativePlatform?.() ||
-          window.location.protocol === 'capacitor:' ||
-          (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '');
-        if (isCapacitor) {
-          endpoint = 'https://ais-pre-s3kpf4jbgnycqoblc463mc-177021215798.europe-west2.run.app/api/assistant/chat';
-        }
-      }
+      const endpoint = NetworkStatusService.resolveApiEndpoint('/api/assistant/chat');
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout

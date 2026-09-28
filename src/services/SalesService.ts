@@ -89,35 +89,46 @@ export class SalesService {
         const movementsToInsert: StockMovement[] = [];
 
         // 1. Process each cart item with FEFO allocation
-        for (const item of payload.items) {
-          if (item.quantity <= 0) {
-            throw new Error(`كمية الصنف (${item.productName}) يجب أن تكون أكبر من الصفر.`);
+        for (const rawItem of payload.items) {
+          const item: any = rawItem;
+          const productId = item.productId || item.product_id;
+          const product = state.products.find((p) => p.id === productId);
+          const productName = item.productName || item.product_name || product?.trade_name_ar || product?.name_ar || product?.name_en || 'صنف';
+          const unitName = item.unitName || item.unit_name || product?.base_unit || 'حبة';
+          const unitFactor = item.unitFactor !== undefined ? item.unitFactor : (item.unit_factor !== undefined ? item.unit_factor : 1);
+          const quantity = item.quantity;
+          const unitPrice = item.unitPrice !== undefined ? item.unitPrice : (item.unit_price !== undefined ? item.unit_price : 0);
+          const discountAmount = item.discountAmount !== undefined ? item.discountAmount : (item.discount_amount !== undefined ? item.discount_amount : 0);
+          const selectedBatchId = item.selectedBatchId || item.selected_batch_id;
+
+          if (quantity <= 0) {
+            throw new Error(`كمية الصنف (${productName}) يجب أن تكون أكبر من الصفر.`);
           }
-          if (item.unitPrice < 0) {
-            throw new Error(`سعر بيع الصنف (${item.productName}) لا يمكن أن يكون سالباً.`);
+          if (unitPrice < 0) {
+            throw new Error(`سعر بيع الصنف (${productName}) لا يمكن أن يكون سالباً.`);
           }
-          if (item.discountAmount < 0) {
-            throw new Error(`خصم الصنف (${item.productName}) لا يمكن أن يكون سالباً.`);
+          if (discountAmount < 0) {
+            throw new Error(`خصم الصنف (${productName}) لا يمكن أن يكون سالباً.`);
           }
 
-          const lineGross = item.unitPrice * item.quantity;
-          if (item.discountAmount > lineGross) {
-            throw new Error(`خصم الصنف (${item.productName}) يتجاوز إجمالي الصنف.`);
+          const lineGross = unitPrice * quantity;
+          if (discountAmount > lineGross) {
+            throw new Error(`خصم الصنف (${productName}) يتجاوز إجمالي الصنف.`);
           }
-          const lineTotal = lineGross - item.discountAmount;
+          const lineTotal = lineGross - discountAmount;
           grossSubtotal += lineGross;
-          lineDiscountsTotal += item.discountAmount;
+          lineDiscountsTotal += discountAmount;
 
-          const baseQtyNeeded = Math.round(item.quantity * item.unitFactor);
+          const baseQtyNeeded = Math.round(quantity * unitFactor);
           if (baseQtyNeeded <= 0) {
-            throw new Error(`الكمية الأساسية للصنف (${item.productName}) غير صالحة.`);
+            throw new Error(`الكمية الأساسية للصنف (${productName}) غير صالحة.`);
           }
 
           // Strict FEFO Allocation Engine
           const allocationResult = StockService.allocateFEFO(
-            item.productId,
+            productId,
             baseQtyNeeded,
-            item.selectedBatchId
+            selectedBatchId
           );
 
           totalCogs += allocationResult.totalCogs;
@@ -148,7 +159,7 @@ export class SalesService {
               id: 'alloc-' + Math.random().toString(36).substring(2, 9),
               sale_item_id: saleItemId,
               sale_id: saleId,
-              product_id: item.productId,
+              product_id: productId,
               batch_id: batch.id,
               allocated_base_quantity: alloc.allocatedQty,
               unit_purchase_cost: alloc.unitPurchaseCost,
@@ -159,13 +170,13 @@ export class SalesService {
 
             // Compute product total balance after deduction
             const productTotalStock = state.batches
-              .filter((b) => b.product_id === item.productId)
+              .filter((b) => b.product_id === productId)
               .reduce((sum, b) => sum + b.current_quantity, 0);
 
             // Detailed Stock Movement Record
             const movement: StockMovement = {
               id: 'mov-' + Math.random().toString(36).substring(2, 9) + '-' + now.toString().slice(-4),
-              product_id: item.productId,
+              product_id: productId,
               batch_id: batch.id,
               movement_type: 'sale',
               reference_type: 'sale_invoice',
@@ -185,14 +196,14 @@ export class SalesService {
           const saleItem: SaleItem = {
             id: saleItemId,
             sale_id: saleId,
-            product_id: item.productId,
-            product_name_snapshot: item.productName,
-            unit_name: item.unitName,
-            unit_factor: item.unitFactor,
-            quantity: item.quantity,
+            product_id: productId,
+            product_name_snapshot: productName,
+            unit_name: unitName,
+            unit_factor: unitFactor,
+            quantity: quantity,
             base_quantity: baseQtyNeeded,
-            unit_price: item.unitPrice,
-            discount_amount: item.discountAmount,
+            unit_price: unitPrice,
+            discount_amount: discountAmount,
             line_total: lineTotal,
             item_cogs: allocationResult.totalCogs,
             item_gross_profit: lineTotal - allocationResult.totalCogs

@@ -25,6 +25,43 @@ import { Money } from '../../utils/money';
 import { Product, Supplier } from '../../types';
 import { classifyImageAnalysisError, readFileAsDataUrl, validateAnalysisImage, withTimeout } from '../../utils/phase82';
 import { NumericInput } from '../ui/NumericInput';
+import { NetworkStatusService } from '../../services/NetworkStatusService';
+
+export type OcrStage =
+  | 'IDLE'
+  | 'FILE_SELECTED'
+  | 'VALIDATING'
+  | 'PREPARING'
+  | 'UPLOADING'
+  | 'WAITING_FOR_HTTP_RESPONSE'
+  | 'UPLOAD_COMPLETED'
+  | 'ANALYZING'
+  | 'RESPONSE_RECEIVED'
+  | 'COMPLETED'
+  | 'ERROR';
+
+export interface OcrDiagnosticInfo {
+  fileSelected: boolean;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  apiUrl: string;
+  apiProtocol: string;
+  networkStatus: string;
+  apiReachability: 'UNKNOWN' | 'CHECKING' | 'PASS' | 'FAIL';
+  uploadStarted: boolean;
+  uploadProgress: number;
+  uploadCompleted: boolean;
+  httpStatus: number | null;
+  serverResponseReceived: boolean;
+  geminiRequestStarted: boolean;
+  geminiResponseReceived: boolean;
+  ocrParsing: 'IDLE' | 'PARSING' | 'SUCCESS' | 'FAILED';
+  finalStatus: string;
+  errorCode?: string | null;
+  modelUsed?: string;
+  latencyMs?: number;
+}
 
 interface ExtractedItem {
   id: string;
@@ -61,23 +98,46 @@ export const InvoiceScannerTab: React.FC = () => {
   const suppliers = state.suppliers;
 
   const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [analysisState, setAnalysisState] = useState<'idle' | 'selected' | 'analyzing' | 'success' | 'error'>('idle');
+  const [ocrStage, setOcrStage] = useState<OcrStage>('IDLE');
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [invoiceData, setInvoiceData] = useState<ExtractedInvoice | null>(null);
   const [postingSuccess, setPostingSuccess] = useState<{ invoiceId: string; invoiceNumber: string; totalAmount: number } | null>(null);
   const [providerConfigured, setProviderConfigured] = useState<boolean | null>(null);
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
+  const [customApiUrl, setCustomApiUrl] = useState<string>(() => NetworkStatusService.getApiBaseUrl());
+  const [apiReachability, setApiReachability] = useState<{
+    checking: boolean;
+    status: 'UNKNOWN' | 'PASS' | 'FAIL';
+    httpStatus?: number;
+    error?: string;
+  }>({ checking: false, status: 'UNKNOWN' });
+
+  const [diagnostic, setDiagnostic] = useState<OcrDiagnosticInfo>({
+    fileSelected: false,
+    fileName: '',
+    mimeType: '',
+    fileSize: 0,
+    apiUrl: '',
+    apiProtocol: '',
+    networkStatus: NetworkStatusService.getStatus(),
+    apiReachability: 'UNKNOWN',
+    uploadStarted: false,
+    uploadProgress: 0,
+    uploadCompleted: false,
+    httpStatus: null,
+    serverResponseReceived: false,
+    geminiRequestStarted: false,
+    geminiResponseReceived: false,
+    ocrParsing: 'IDLE',
+    finalStatus: 'IDLE'
+  });
 
   React.useEffect(() => {
-    let statusUrl = '/api/assistant/status';
-    if (typeof window !== 'undefined') {
-      const isCapacitorNative = (window as any).Capacitor?.isNativePlatform?.() ||
-        window.location.protocol === 'capacitor:' ||
-        window.location.protocol === 'file:';
-      if (isCapacitorNative) {
-        statusUrl = 'https://ais-pre-s3kpf4jbgnycqoblc463mc-177021215798.europe-west2.run.app/api/assistant/status';
-      }
-    }
+    const statusUrl = NetworkStatusService.resolveApiEndpoint('/api/assistant/status');
 
     fetch(statusUrl)
       .then((r) => {
@@ -92,29 +152,90 @@ export const InvoiceScannerTab: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  // Manual Ping Check for Server Reachability
+  const handleTestApiReachability = async () => {
+    setApiReachability({ checking: true, status: 'UNKNOWN' });
+    try {
+      const res = await NetworkStatusService.checkApiReachability(5000);
+      if (res.reachable) {
+        setApiReachability({
+          checking: false,
+          status: 'PASS',
+          httpStatus: res.httpStatus
+        });
+        setDiagnostic((prev) => ({
+          ...prev,
+          apiReachability: 'PASS',
+          httpStatus: res.httpStatus || 200
+        }));
+      } else {
+        setApiReachability({
+          checking: false,
+          status: 'FAIL',
+          httpStatus: res.httpStatus,
+          error: res.error
+        });
+        setDiagnostic((prev) => ({
+          ...prev,
+          apiReachability: 'FAIL',
+          httpStatus: res.httpStatus || null
+        }));
+      }
+    } catch (e: any) {
+      setApiReachability({
+        checking: false,
+        status: 'FAIL',
+        error: e.message || 'CONNECT_FAILED'
+      });
+    }
+  };
+
   // Helper to handle image file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setSelectedFile(file);
     const validationError = validateAnalysisImage(file);
     if (validationError) {
       setImageSrc(null);
-      setAnalysisState('error');
+      setOcrStage('ERROR');
       setError(validationError);
+      setErrorCode('FILE_ERROR');
+      setDiagnostic((prev) => ({
+        ...prev,
+        fileSelected: true,
+        fileName: file.name,
+        mimeType: file.type,
+        fileSize: file.size,
+        finalStatus: 'FILE_ERROR',
+        errorCode: 'FILE_ERROR'
+      }));
       return;
     }
 
     readFileAsDataUrl(file).then((dataUrl) => {
       setImageSrc(dataUrl);
-      setAnalysisState('selected');
+      setOcrStage('FILE_SELECTED');
       setError(null);
+      setErrorCode(null);
       setInvoiceData(null);
       setPostingSuccess(null);
+      setDiagnostic((prev) => ({
+        ...prev,
+        fileSelected: true,
+        fileName: file.name,
+        mimeType: file.type,
+        fileSize: file.size,
+        uploadProgress: 0,
+        uploadCompleted: false,
+        finalStatus: 'FILE_SELECTED'
+      }));
     }).catch((uploadError) => {
       setImageSrc(null);
-      setAnalysisState('error');
+      setOcrStage('ERROR');
       setError(classifyImageAnalysisError(uploadError));
+      setErrorCode('FILE_ERROR');
     }).finally(() => {
       e.target.value = '';
     });
@@ -124,7 +245,9 @@ export const InvoiceScannerTab: React.FC = () => {
   const handleLoadSample = (sampleType: 'pharma1' | 'pharma2') => {
     setPostingSuccess(null);
     setError(null);
+    setErrorCode(null);
     setInvoiceData(null);
+    setUploadProgress(0);
 
     // Create a high-contrast canvas image representing a medical invoice
     const canvas = document.createElement('canvas');
@@ -218,82 +341,211 @@ export const InvoiceScannerTab: React.FC = () => {
 
       const generatedDataUrl = canvas.toDataURL('image/png');
       setImageSrc(generatedDataUrl);
+      setOcrStage('FILE_SELECTED');
+      setSelectedFile(null);
+      setDiagnostic((prev) => ({
+        ...prev,
+        fileSelected: true,
+        fileName: `${sampleType}_sample_invoice.png`,
+        mimeType: 'image/png',
+        fileSize: Math.round(generatedDataUrl.length * 0.75),
+        uploadProgress: 0,
+        uploadCompleted: false,
+        finalStatus: 'FILE_SELECTED'
+      }));
     }
   };
 
-  // Perform AI analysis via server route
+  // Perform AI analysis via Real XHR with Real Upload Progress & Strict State Machine
   const handleAnalyzeInvoice = async () => {
     if (!imageSrc) {
       setError('يرجى تحميل أو التقاط صورة الفاتورة أولاً.');
+      setErrorCode('FILE_ERROR');
       return;
     }
 
+    // 1. Stage: VALIDATING
+    setOcrStage('VALIDATING');
     setAnalyzing(true);
-    setAnalysisState('analyzing');
     setError(null);
+    setErrorCode(null);
     setInvoiceData(null);
     setPostingSuccess(null);
+    setUploadProgress(0);
 
+    const targetEndpoint = NetworkStatusService.resolveApiEndpoint('/api/gemini/analyze-invoice');
+    const isOnline = NetworkStatusService.isOnline();
+    const networkStatus = NetworkStatusService.getStatus();
+
+    setDiagnostic((prev) => ({
+      ...prev,
+      apiUrl: targetEndpoint,
+      apiProtocol: targetEndpoint.startsWith('https') ? 'HTTPS' : 'HTTP',
+      networkStatus: networkStatus,
+      uploadStarted: false,
+      uploadCompleted: false,
+      uploadProgress: 0,
+      httpStatus: null,
+      serverResponseReceived: false,
+      geminiRequestStarted: false,
+      geminiResponseReceived: false,
+      ocrParsing: 'IDLE',
+      finalStatus: 'VALIDATING'
+    }));
+
+    // If device is completely offline from the start
+    if (!isOnline) {
+      setAnalyzing(false);
+      setOcrStage('ERROR');
+      setErrorCode('NETWORK_OFFLINE');
+      setError('لا يوجد اتصال بالإنترنت. يرجى التحقق من اتصال الشبكة (Wi-Fi / بيانات الجوال).');
+      setDiagnostic((prev) => ({
+        ...prev,
+        finalStatus: 'NETWORK_OFFLINE',
+        errorCode: 'NETWORK_OFFLINE'
+      }));
+      return;
+    }
+
+    // 2. Stage: PREPARING
+    setOcrStage('PREPARING');
+    setDiagnostic((prev) => ({ ...prev, finalStatus: 'PREPARING' }));
+
+    const payload = JSON.stringify({
+      image: imageSrc,
+      existingProducts: products.map((p) => ({
+        id: p.id,
+        name_ar: p.name_ar,
+        name_en: p.name_en,
+        base_unit: p.base_unit
+      })),
+      existingSuppliers: suppliers.map((s) => ({
+        id: s.id,
+        name_ar: s.name_ar,
+        name: s.name
+      }))
+    });
+
+    const startTime = Date.now();
+
+    // 3. Stage: UPLOADING via XMLHttpRequest with Real Progress Tracking
     try {
-      let endpoint = '/api/gemini/analyze-invoice';
-      if (typeof window !== 'undefined') {
-        const isCapacitorNative = (window as any).Capacitor?.isNativePlatform?.() ||
-          window.location.protocol === 'capacitor:' ||
-          window.location.protocol === 'file:';
-        if (isCapacitorNative) {
-          endpoint = 'https://ais-pre-s3kpf4jbgnycqoblc463mc-177021215798.europe-west2.run.app/api/gemini/analyze-invoice';
-        }
-      }
+      const resultJson: any = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', targetEndpoint, true);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.timeout = 90000;
 
-      const response = await withTimeout(fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: imageSrc,
-          existingProducts: products.map((p) => ({
-            id: p.id,
-            name_ar: p.name_ar,
-            name_en: p.name_en,
-            base_unit: p.base_unit
-          })),
-          existingSuppliers: suppliers.map((s) => ({
-            id: s.id,
-            name_ar: s.name_ar,
-            name: s.name
-          }))
-        })
-      }), 90_000);
-
-      if (!response.ok) {
-        let errMsg = `فشل الاتصال بخدمة التحليل (${response.status})`;
-        try {
-          const errJson = await response.json();
-          if (errJson && errJson.error) {
-            errMsg = errJson.error;
+        // REAL Upload Progress (No Fake Numbers)
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable && evt.total > 0) {
+            const pct = Math.min(100, Math.round((evt.loaded / evt.total) * 100));
+            setUploadProgress(pct);
+            setDiagnostic((prev) => ({ ...prev, uploadProgress: pct }));
           }
-        } catch {
-          // not json
-        }
-        throw new Error(errMsg);
-      }
+        };
 
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('تعذر معالجة الفاتورة عبر الخادم السحابي حالياً. يرجى التأكد من اتصال الإنترنت.');
-      }
+        xhr.upload.onloadstart = () => {
+          setOcrStage('UPLOADING');
+          setDiagnostic((prev) => ({
+            ...prev,
+            uploadStarted: true,
+            finalStatus: 'UPLOADING'
+          }));
+        };
 
-      const rawResult = await response.json();
-      if (rawResult.simulated) {
-        throw new Error('تحليل الصور غير متاح حاليًا. لم يتم تفعيل مزود تحليل الصور.');
-      }
+        xhr.upload.onload = () => {
+          setUploadProgress(100);
+          setOcrStage('WAITING_FOR_HTTP_RESPONSE');
+          setDiagnostic((prev) => ({
+            ...prev,
+            uploadProgress: 100,
+            uploadCompleted: true,
+            finalStatus: 'WAITING_FOR_HTTP_RESPONSE'
+          }));
+        };
+
+        xhr.onload = () => {
+          const duration = Date.now() - startTime;
+          setDiagnostic((prev) => ({
+            ...prev,
+            httpStatus: xhr.status,
+            serverResponseReceived: true,
+            latencyMs: duration
+          }));
+
+          if (xhr.status >= 200 && xhr.status < 300) {
+            setOcrStage('UPLOAD_COMPLETED');
+            try {
+              const parsed = JSON.parse(xhr.responseText);
+              resolve(parsed);
+            } catch (jsonErr) {
+              reject(new Error('JSON_PARSE_ERROR'));
+            }
+          } else if (xhr.status >= 400 && xhr.status < 500) {
+            let serverErrMsg = `HTTP_${xhr.status}`;
+            try {
+              const errObj = JSON.parse(xhr.responseText);
+              if (errObj?.error) serverErrMsg = errObj.error;
+            } catch {}
+            const err = new Error(serverErrMsg);
+            (err as any).code = 'HTTP_4XX';
+            (err as any).status = xhr.status;
+            reject(err);
+          } else {
+            let serverErrMsg = `HTTP_${xhr.status}`;
+            try {
+              const errObj = JSON.parse(xhr.responseText);
+              if (errObj?.error) serverErrMsg = errObj.error;
+            } catch {}
+            const err = new Error(serverErrMsg);
+            (err as any).code = 'HTTP_5XX';
+            (err as any).status = xhr.status;
+            reject(err);
+          }
+        };
+
+        xhr.onerror = () => {
+          // If internet was online, xhr.status=0 means the server host was unreachable (e.g. localhost on mobile)
+          const err = new Error(NetworkStatusService.isOnline() ? 'API_UNREACHABLE' : 'NETWORK_OFFLINE');
+          (err as any).code = NetworkStatusService.isOnline() ? 'API_UNREACHABLE' : 'NETWORK_OFFLINE';
+          reject(err);
+        };
+
+        xhr.ontimeout = () => {
+          const err = new Error('TIMEOUT');
+          (err as any).code = 'TIMEOUT';
+          reject(err);
+        };
+
+        xhr.send(payload);
+      });
+
+      // 4. Stage: ANALYZING & PARSING
+      setOcrStage('ANALYZING');
+      setDiagnostic((prev) => ({
+        ...prev,
+        geminiRequestStarted: true,
+        geminiResponseReceived: true,
+        ocrParsing: 'PARSING',
+        modelUsed: resultJson.model || 'gemini',
+        finalStatus: 'ANALYZING'
+      }));
 
       // Normalize items
-      const rawItems: any[] = Array.isArray(rawResult.items) ? rawResult.items : [];
+      const rawItems: any[] = Array.isArray(resultJson.items) ? resultJson.items : [];
       if (rawItems.length === 0) {
-        throw new Error('عاد مزود تحليل الصور دون أصناف قابلة للقراءة.');
+        throw new Error('NO_ITEMS_DETECTED');
       }
+
+      setOcrStage('RESPONSE_RECEIVED');
+      setDiagnostic((prev) => ({
+        ...prev,
+        ocrParsing: 'SUCCESS',
+        finalStatus: 'RESPONSE_RECEIVED'
+      }));
+
       const normalizedItems: ExtractedItem[] = rawItems.map((it, idx) => {
-        // Auto-match with existing product if not already matched
         let matchedId = it.matched_product_id;
         if (!matchedId) {
           const rawL = (it.raw_name || it.product_name_ar || '').toLowerCase();
@@ -344,9 +596,9 @@ export const InvoiceScannerTab: React.FC = () => {
       });
 
       // Match supplier
-      let matchedSupId = rawResult.matched_supplier_id;
-      if (!matchedSupId && rawResult.supplier_name) {
-        const sName = rawResult.supplier_name.toLowerCase();
+      let matchedSupId = resultJson.matched_supplier_id;
+      if (!matchedSupId && resultJson.supplier_name) {
+        const sName = resultJson.supplier_name.toLowerCase();
         const foundSup = suppliers.find((s) => (s.name_ar || s.name || '').toLowerCase().includes(sName) || sName.includes((s.name_ar || s.name || '').toLowerCase()));
         if (foundSup) {
           matchedSupId = foundSup.id;
@@ -354,20 +606,36 @@ export const InvoiceScannerTab: React.FC = () => {
       }
 
       setInvoiceData({
-        supplier_name: rawResult.supplier_name || 'مورد غير محدد بالفاتورة',
+        supplier_name: resultJson.supplier_name || 'مورد غير محدد بالفاتورة',
         matched_supplier_id: matchedSupId,
         is_new_supplier: !matchedSupId,
-        invoice_number: rawResult.invoice_number || `INV-${Date.now().toString().slice(-6)}`,
-        invoice_date: rawResult.invoice_date || new Date().toISOString().split('T')[0],
-        payment_type: rawResult.payment_type === 'cash' ? 'cash' : 'credit',
-        total_amount: rawResult.total_amount,
+        invoice_number: resultJson.invoice_number || `INV-${Date.now().toString().slice(-6)}`,
+        invoice_date: resultJson.invoice_date || new Date().toISOString().split('T')[0],
+        payment_type: resultJson.payment_type === 'cash' ? 'cash' : 'credit',
+        total_amount: resultJson.total_amount,
         items: normalizedItems,
         simulated: false
       });
-      setAnalysisState('success');
+
+      // 5. Stage: COMPLETED
+      setOcrStage('COMPLETED');
+      setDiagnostic((prev) => ({
+        ...prev,
+        finalStatus: 'COMPLETED'
+      }));
     } catch (err: any) {
-      setAnalysisState('error');
-      setError(classifyImageAnalysisError(err));
+      setOcrStage('ERROR');
+      const errCode = (err as any)?.code || (err?.message === 'TIMEOUT' ? 'TIMEOUT' : 'UNKNOWN_ERROR');
+      setErrorCode(errCode);
+      const classifiedMsg = classifyImageAnalysisError(err);
+      setError(classifiedMsg);
+
+      setDiagnostic((prev) => ({
+        ...prev,
+        finalStatus: errCode,
+        errorCode: errCode,
+        ocrParsing: errCode === 'JSON_PARSE_ERROR' ? 'FAILED' : prev.ocrParsing
+      }));
     } finally {
       setAnalyzing(false);
     }
@@ -582,23 +850,81 @@ export const InvoiceScannerTab: React.FC = () => {
         </div>
       )}
 
-      {/* Error Alert with Retry Option */}
+      {/* Error Alert with Detailed Diagnostics & Action Options */}
       {error && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-            <span className="font-medium text-xs">{error}</span>
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-xs">{error}</span>
+                  {errorCode && (
+                    <span className="px-2 py-0.5 bg-rose-200/80 text-rose-900 rounded font-mono text-[10px] font-bold">
+                      {errorCode}
+                    </span>
+                  )}
+                </div>
+                {errorCode === 'API_UNREACHABLE' && (
+                  <p className="text-[11px] text-rose-700 mt-1 leading-relaxed">
+                    ملاحظة: جهازك متصل بالإنترنت، ولكن تعذر الوصول إلى عنوان خادم الـ API السحابي المحدد. يرجى التحقق من إعدادات عنوان الخادم أدناه أو إجراء اختبار Ping.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={handleTestApiReachability}
+                disabled={apiReachability.checking}
+                className="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-900 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${apiReachability.checking ? 'animate-spin' : ''}`} />
+                <span>فحص الخادم (Ping)</span>
+              </button>
+              {imageSrc && (
+                <button
+                  type="button"
+                  disabled={analyzing}
+                  onClick={handleAnalyzeInvoice}
+                  className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-xs"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>إعادة المحاولة</span>
+                </button>
+              )}
+            </div>
           </div>
-          {imageSrc && (
-            <button
-              type="button"
-              disabled={analyzing}
-              onClick={handleAnalyzeInvoice}
-              className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all shrink-0 self-end sm:self-auto"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>إعادة المحاولة</span>
-            </button>
+        </div>
+      )}
+
+      {/* Real-time State & Upload Progress Bar */}
+      {analyzing && (
+        <div className="p-4 bg-indigo-50/90 border border-indigo-200 rounded-2xl space-y-2 animate-in fade-in">
+          <div className="flex items-center justify-between text-xs font-bold text-indigo-950">
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+              <span>
+                {ocrStage === 'VALIDATING' && '1/5. جاري التحقق من سلامة ملف وصيغة الصورة...'}
+                {ocrStage === 'PREPARING' && '2/5. جاري تجهيز حزمة الصورة والمطابقات الصيدلانية...'}
+                {ocrStage === 'UPLOADING' && `3/5. جاري رفع الصورة إلى خادم الذكاء الاصطناعي (${uploadProgress}%)...`}
+                {ocrStage === 'WAITING_FOR_HTTP_RESPONSE' && '4/5. تم نقل البيانات، بانتظار استجابة خادم المعالجة...'}
+                {ocrStage === 'UPLOAD_COMPLETED' && '4/5. تم استلام الحزمة بنجاح، جاري التحليل...'}
+                {ocrStage === 'ANALYZING' && '5/5. جاري معالجة الفاتورة واستخراج بنود الأدوية عبر Gemini Vision...'}
+                {ocrStage === 'RESPONSE_RECEIVED' && 'اكتمل الاستخراج، جاري إعداد جدول المراجعة...'}
+              </span>
+            </div>
+            {ocrStage === 'UPLOADING' && (
+              <span className="font-mono text-indigo-700 text-xs">{uploadProgress}%</span>
+            )}
+          </div>
+          {ocrStage === 'UPLOADING' && (
+            <div className="w-full bg-indigo-200/60 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-indigo-600 h-2 rounded-full transition-all duration-200 ease-out"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
           )}
         </div>
       )}
@@ -648,7 +974,16 @@ export const InvoiceScannerTab: React.FC = () => {
                   alt="معاينة الفاتورة"
                   className="max-h-48 rounded-xl mx-auto shadow-sm border border-slate-200 object-contain"
                 />
-                <p className="text-slate-600 font-bold">تم تحميل الصورة بنجاح (انقر لتغييرها)</p>
+                <div className="text-center">
+                  <p className="text-slate-800 font-bold text-xs">
+                    تم اختيار الصورة محلياً بنجاح (جاهزة للإرسال والتحليل — انقر لتغييرها)
+                  </p>
+                  <p className="text-slate-500 font-mono text-[11px] mt-0.5">
+                    {selectedFile
+                      ? `الملف: ${selectedFile.name} (${(selectedFile.size / 1024).toFixed(1)} KB)`
+                      : 'نموذج فاتورة دوائية تجريبية'}
+                  </p>
+                </div>
               </div>
             ) : (
               <>
@@ -704,15 +1039,87 @@ export const InvoiceScannerTab: React.FC = () => {
                 {analyzing ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>جاري تحليل الفاتورة واستخراج البنود...</span>
+                    <span>جاري الرفع والتحليل...</span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 text-amber-300" />
-                    <span>تحليل الفاتورة بالذكاء الاصطناعي</span>
+                    <span>بدء الرفع والتحليل بالذكاء الاصطناعي</span>
                   </>
                 )}
               </button>
+            )}
+          </div>
+
+          {/* Expandable Diagnostic & API Configuration Panel */}
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setShowDiagnostic(!showDiagnostic)}
+              className="text-[11px] font-bold text-slate-500 hover:text-slate-800 flex items-center gap-1 transition-colors"
+            >
+              <span>{showDiagnostic ? '▲ إخفاء تشخيص الاتصال (OCR Diagnostic)' : '▼ عرض تشخيص اتصال الخادم (OCR Diagnostic)'}</span>
+            </button>
+
+            {showDiagnostic && (
+              <div className="mt-2 p-3.5 bg-slate-900 text-slate-200 rounded-2xl font-mono text-2xs space-y-2.5 border border-slate-800">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                  <span className="font-bold text-indigo-400">=== OCR REQUEST DIAGNOSTIC ===</span>
+                  <button
+                    type="button"
+                    onClick={handleTestApiReachability}
+                    className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-3xs font-sans font-bold"
+                  >
+                    {apiReachability.checking ? 'جاري الفحص...' : 'فحص الخادم (Ping /api/health)'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                  <div>fileSelected: <span className="text-white font-bold">{diagnostic.fileSelected ? 'true' : 'false'}</span></div>
+                  <div>fileName: <span className="text-white font-bold">{diagnostic.fileName || 'none'}</span></div>
+                  <div>mimeType: <span className="text-white font-bold">{diagnostic.mimeType || 'none'}</span></div>
+                  <div>fileSize: <span className="text-white font-bold">{diagnostic.fileSize ? `${(diagnostic.fileSize / 1024).toFixed(1)} KB` : '0'}</span></div>
+                  <div>apiUrl: <span className="text-cyan-400 font-bold break-all">{diagnostic.apiUrl || NetworkStatusService.resolveApiEndpoint('/api/gemini/analyze-invoice')}</span></div>
+                  <div>apiProtocol: <span className="text-white font-bold">{diagnostic.apiProtocol || (diagnostic.apiUrl.startsWith('https') ? 'HTTPS' : 'HTTP')}</span></div>
+                  <div>networkStatus: <span className="text-emerald-400 font-bold">{NetworkStatusService.getStatus()}</span></div>
+                  <div>apiReachability: <span className={apiReachability.status === 'PASS' ? 'text-emerald-400 font-bold' : (apiReachability.status === 'FAIL' ? 'text-rose-400 font-bold' : 'text-amber-400')}>
+                    {apiReachability.status} {apiReachability.httpStatus ? `(${apiReachability.httpStatus})` : ''} {apiReachability.error ? `[${apiReachability.error}]` : ''}
+                  </span></div>
+                  <div>uploadStarted: <span className="text-white font-bold">{diagnostic.uploadStarted ? 'true' : 'false'}</span></div>
+                  <div>uploadProgress: <span className="text-cyan-400 font-bold">{diagnostic.uploadProgress}%</span></div>
+                  <div>uploadCompleted: <span className="text-white font-bold">{diagnostic.uploadCompleted ? 'true' : 'false'}</span></div>
+                  <div>httpStatus: <span className="text-white font-bold">{diagnostic.httpStatus !== null ? diagnostic.httpStatus : 'null'}</span></div>
+                  <div>serverResponseReceived: <span className="text-white font-bold">{diagnostic.serverResponseReceived ? 'true' : 'false'}</span></div>
+                  <div>geminiRequestStarted: <span className="text-white font-bold">{diagnostic.geminiRequestStarted ? 'true' : 'false'}</span></div>
+                  <div>geminiResponseReceived: <span className="text-white font-bold">{diagnostic.geminiResponseReceived ? 'true' : 'false'}</span></div>
+                  <div>ocrParsing: <span className="text-white font-bold">{diagnostic.ocrParsing}</span></div>
+                  <div>finalStatus: <span className={diagnostic.finalStatus === 'COMPLETED' ? 'text-emerald-400 font-bold' : (diagnostic.finalStatus === 'IDLE' ? 'text-slate-400' : 'text-amber-300 font-bold')}>{diagnostic.finalStatus}</span></div>
+                  {diagnostic.modelUsed && <div>modelUsed: <span className="text-violet-400 font-bold">{diagnostic.modelUsed}</span></div>}
+                  {diagnostic.latencyMs && <div>duration: <span className="text-white font-bold">{diagnostic.latencyMs}ms</span></div>}
+                </div>
+
+                {/* Custom API Base URL Config (for mobile & LAN testing) */}
+                <div className="pt-2 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <span className="text-slate-400 shrink-0 text-3xs font-sans">تخصيص عنوان خادم الـ API:</span>
+                  <input
+                    type="text"
+                    value={customApiUrl}
+                    onChange={(e) => setCustomApiUrl(e.target.value)}
+                    placeholder="https://your-host.com أو اتركه فارغاً للافتراضي"
+                    className="flex-1 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-2xs text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      NetworkStatusService.setCustomApiBaseUrl(customApiUrl);
+                      handleTestApiReachability();
+                    }}
+                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-sans font-bold text-3xs shrink-0"
+                  >
+                    حفظ واختبار
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>

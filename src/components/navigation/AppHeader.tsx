@@ -2,6 +2,7 @@ import React from 'react';
 import { RotateCw, Settings, Power, Smartphone, Moon, Sun, Menu } from 'lucide-react';
 import { PharmacyProfile, User } from '../../types';
 import { AppBrandIcon } from '../common/AppBrandIcon';
+import { NetworkIndicator } from '../common/NetworkIndicator';
 import { useTheme } from '../../context/ThemeContext';
 
 interface AppHeaderProps {
@@ -57,6 +58,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
         {/* Quick Header Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
+          <NetworkIndicator compact />
+
           {onOpenApkModal && (
             <button
               id="btn-header-apk"
