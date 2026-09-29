@@ -30,10 +30,39 @@ import { BackNavigationService } from './services/BackNavigationService';
 import { useBackHandler } from './hooks/useBackHandler';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
+function getSafeUsers(): User[] {
+  try {
+    const state = db.getState();
+    if (!state || !Array.isArray(state.users)) {
+      return [];
+    }
+    return state.users.filter((user): user is User => Boolean(user && typeof user === 'object' && user.id));
+  } catch {
+    return [];
+  }
+}
+
 export function App() {
   const [currentTab, setCurrentTab] = useState<TabKey>('dashboard');
-  const [profile, setProfile] = useState<PharmacyProfile>(db.getState().profile);
-  const [currentUser, setCurrentUser] = useState<User>(db.getState().users[0]);
+  const [profile, setProfile] = useState<PharmacyProfile>(() => {
+    const state = db.getState();
+    return state?.profile ?? {
+      id: 'profile-uninitialized',
+      name_ar: 'Smart Pharmacy ERP',
+      phone: '',
+      currency: 'YER',
+      currency_code: 'YER',
+      default_profit_margin_bps: 0,
+      receipt_paper_size: '80mm',
+      device_id: 'local-device',
+      sync_status: 'pending',
+      updated_at: Date.now()
+    };
+  });
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const users = getSafeUsers();
+    return users[0] ?? null;
+  });
   const [isLocked, setIsLocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [lockError, setLockError] = useState(false);
@@ -46,6 +75,16 @@ export function App() {
   const [showApkModal, setShowApkModal] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
   const [activeDrawerModal, setActiveDrawerModal] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = db.subscribe(() => {
+      const nextProfile = db.getState()?.profile ?? profile;
+      setProfile(nextProfile);
+      const users = getSafeUsers();
+      setCurrentUser(users[0] ?? null);
+    });
+    return unsub;
+  }, [profile]);
 
   // Initialize Android & Web Back Navigation Policy
   useEffect(() => {
@@ -105,19 +144,16 @@ export function App() {
     return true;
   }, 100);
 
-  useEffect(() => {
-    const unsub = db.subscribe(() => {
-      setProfile(db.getState().profile);
-      setCurrentUser(db.getState().users[0]);
-    });
-    return unsub;
-  }, []);
-
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
 
   const handleUnlock = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!currentUser) {
+      setLockError(true);
+      return;
+    }
 
     if (lockoutUntil && Date.now() < lockoutUntil) {
       const waitSec = Math.ceil((lockoutUntil - Date.now()) / 1000);
@@ -130,14 +166,8 @@ export function App() {
       return;
     }
 
-    // Strict verification: NEVER allow universal bypass '1234'
-    const isPinMatch = currentUser?.pin_code
-      ? PasswordSecurity.verifySync(pinInput, currentUser.pin_code)
-      : false;
-    const isPasswordMatch = currentUser?.password_hash
-      ? PasswordSecurity.verifySync(pinInput, currentUser.password_hash)
-      : false;
-
+    const isPinMatch = currentUser.pin_code ? PasswordSecurity.verifySync(pinInput, currentUser.pin_code) : false;
+    const isPasswordMatch = currentUser.password_hash ? PasswordSecurity.verifySync(pinInput, currentUser.password_hash) : false;
     const isValid = isPinMatch || isPasswordMatch;
 
     if (isValid) {
@@ -147,30 +177,62 @@ export function App() {
       setFailedAttempts(0);
       setLockoutUntil(null);
 
-      // Automatic seamless hash upgrade if user had legacy hash
-      if (currentUser?.pin_code && PasswordSecurity.needsRehash(currentUser.pin_code)) {
+      if (currentUser.pin_code && PasswordSecurity.needsRehash(currentUser.pin_code)) {
         try {
           db.transaction(() => {
             const state = db.getState();
-            const u = state.users.find((usr) => usr.id === currentUser.id);
-            if (u) {
-              u.pin_code = PasswordSecurity.hashSync(pinInput);
-              u.updated_at = Date.now();
+            const user = state.users.find((usr) => usr.id === currentUser.id);
+            if (user) {
+              const upgradedHash = PasswordSecurity.hashSync(pinInput);
+              user.pin_code = upgradedHash;
+              user.updated_at = Date.now();
             }
           });
-        } catch {}
+        } catch (error) {
+          const details = error instanceof Error ? error.message : String(error);
+          console.error('PIN rehash failed; preserving existing credential', {
+            userId: currentUser.id,
+            error: details
+          });
+          setToastMessage('تم الاحتفاظ بالرمز الحالي بسبب فشل ترقية الأمان.');
+        }
       }
     } else {
       const newAttempts = failedAttempts + 1;
       setFailedAttempts(newAttempts);
       setLockError(true);
 
-      // Lockout protection after 5 failed attempts
       if (newAttempts >= 5) {
-        setLockoutUntil(Date.now() + 30000); // 30 seconds penalty
+        setLockoutUntil(Date.now() + 30000);
       }
     }
   };
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex items-center justify-center p-6" dir="rtl">
+        <div className="w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xl">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600 text-2xl font-black text-white">S</div>
+          <h1 className="text-center text-xl font-black text-slate-900 dark:text-white">إعداد أول مستخدم</h1>
+          <p className="mt-3 text-center text-sm text-slate-600 dark:text-slate-300">
+            لا توجد حسابات مستخدم في النظام. قم بإنشاء المدير الأول بشكل آمن قبل المتابعة.
+          </p>
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            لا يتم إنشاء حسابات افتراضية أو كلمات مرور عالمية.
+          </div>
+          <button
+            type="button"
+            className="mt-5 w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-md"
+            onClick={() => {
+              setToastMessage('إعداد أول مستخدم متاح في شاشة الإعدادات المخصصة.');
+            }}
+          >
+            إنشاء المدير الأول
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Lock screen view
   if (isLocked) {
@@ -198,7 +260,7 @@ export function App() {
                 setLockError(false);
               }}
               placeholder="رمز PIN الشخصي للمستخدم"
-              className="w-full py-3 px-4 text-center text-lg font-mono tracking-widest bg-slate-900/80 border border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none disabled:opacity-50"
+              className="w-full py-3 px-4 text-center text-lg font-mono tracking-widest bg-slate-900/80 border border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
             />
 
             {isLockedOut ? (
@@ -222,7 +284,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-emerald-100 dark:selection:bg-emerald-950 selection:text-emerald-900 dark:selection:text-emerald-200 transition-colors duration-200" dir="rtl">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-emerald-100 dark:selection:bg-emerald-950 selection:text-emerald-900 dark:selection:text-emerald-200">
       {/* Persistent App Header */}
       <AppHeader
         profile={profile}
@@ -273,7 +335,7 @@ export function App() {
           type="button"
           onClick={() => setShowAssistant(true)}
           title="المساعد الصيدلاني الذكي"
-          className="group relative flex items-center justify-center gap-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white w-11 h-11 sm:w-auto sm:h-auto sm:px-3.5 sm:py-2.5 rounded-full shadow-lg shadow-indigo-600/30 hover:scale-105 active:scale-95 transition-all border-2 border-white dark:border-slate-800"
+          className="group relative flex items-center justify-center gap-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white w-11 h-11 sm:w-auto sm:h-auto sm:px-3.5 sm:py-2.5 rounded-full shadow-lg"
         >
           <Bot className="w-5 h-5 text-indigo-100" />
           <span className="text-xs font-bold hidden sm:inline">المساعد الذكي</span>
@@ -381,7 +443,7 @@ export function App() {
 
       {/* Android Back Navigation Exit Confirmation Toast */}
       {toastMessage && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-xl border border-slate-700/80 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-xl border border-slate-700/80 flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-amber-400" />
           <span>{toastMessage}</span>
         </div>
@@ -391,4 +453,3 @@ export function App() {
 }
 
 export default App;
-
