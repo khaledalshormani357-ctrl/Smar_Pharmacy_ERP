@@ -1,7 +1,8 @@
 export class PasswordSecurity {
-  /**
-   * Generate a secure random salt.
-   */
+  static readonly DEFAULT_ITERATIONS = 200000;
+  static readonly DEFAULT_SALT_BYTES = 16;
+  static readonly VERSION = 'v1';
+
   static generateSalt(length = 16): string {
     const arr = new Uint8Array(length);
     if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
@@ -11,86 +12,185 @@ export class PasswordSecurity {
         arr[i] = Math.floor(Math.random() * 256);
       }
     }
-    return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
+    return Array.from(arr)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
   }
 
-  /**
-   * Async hash used for strong local/offline hashing.
-   * This is a client-side fallback and should be paired with a secure server-side scheme in production.
-   */
-  static async hash(secret: string, salt?: string): Promise<string> {
-    const usedSalt = salt || this.generateSalt();
-    const input = new TextEncoder().encode(`${secret}:${usedSalt}`);
+  static hexToBytes(hex: string): Uint8Array {
+    const clean = hex.replace(/^0x/, '');
+    if (clean.length % 2 !== 0) {
+      throw new Error('Malformed hex input');
+    }
+    const bytes = new Uint8Array(clean.length / 2);
+    for (let i = 0; i < clean.length; i += 2) {
+      bytes[i / 2] = Number.parseInt(clean.slice(i, i + 2), 16);
+    }
+    return bytes;
+  }
 
-    if (typeof crypto !== 'undefined' && crypto.subtle) {
-      let current = input;
-      for (let i = 0; i < 450; i++) {
-        current = new Uint8Array(await crypto.subtle.digest('SHA-256', current));
+  static constantTimeEquals(a: string, b: string): boolean {
+    const aBytes = new TextEncoder().encode(a);
+    const bBytes = new TextEncoder().encode(b);
+    const length = Math.max(aBytes.length, bBytes.length);
+    let diff = 0;
+    for (let i = 0; i < length; i++) {
+      const aByte = aBytes[i] ?? 0;
+      const bByte = bBytes[i] ?? 0;
+      diff |= aByte ^ bByte;
+    }
+    return diff === 0 && aBytes.length === bBytes.length;
+  }
+
+  static normalizeLegacyHash(storedHash: string): string {
+    if (!storedHash) return '';
+    const trimmed = storedHash.trim();
+    if (trimmed.startsWith('hashsync:')) {
+      const parts = trimmed.split(':');
+      if (parts.length >= 4) {
+        return `legacy-hashsync:${parts[1]}:${parts[2]}:${parts[3]}`;
       }
-      const hashHex = Array.from(current)
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-      return `pbkdf2:sha256:450:${usedSalt}:${hashHex}`;
     }
-
-    return this.hashSync(secret, usedSalt);
+    return trimmed;
   }
 
-  /**
-   * Deterministic synchronous fallback used for local migration and bootstrapping.
-   */
-  static hashSync(secret: string, salt?: string): string {
-    const usedSalt = salt || this.generateSalt();
-    let hash = 2166136261 >>> 0;
-    const combined = `${secret}:${usedSalt}`;
-
-    for (let i = 0; i < combined.length; i++) {
-      hash ^= combined.charCodeAt(i);
-      hash = Math.imul(hash, 16777619) >>> 0;
+  static async hash(secret: string, salt?: string, iterations = PasswordSecurity.DEFAULT_ITERATIONS): Promise<string> {
+    if (!secret) {
+      throw new Error('Secret is required for hashing');
     }
 
-    for (let i = 0; i < 64; i++) {
-      hash = Math.imul(hash ^ (hash >>> 13), 0x5bd1e995) >>> 0;
-    }
+    const usedSalt = salt || this.generateSalt(this.DEFAULT_SALT_BYTES);
+    const encoder = new TextEncoder();
+    const saltBytes = this.hexToBytes(usedSalt);
+    const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(secret), 'PBKDF2', false, ['deriveBits']);
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: saltBytes,
+        iterations,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      256
+    );
 
-    return `hashsync:v2:${usedSalt}:${hash.toString(16).padStart(8, '0')}`;
+    const derived = Array.from(new Uint8Array(derivedBits))
+      .map((val) => val.toString(16).padStart(2, '0'))
+      .join('');
+
+    return `pbkdf2-sha256:${this.VERSION}:${iterations}:${usedSalt}:${derived}`;
   }
 
-  /**
-   * Strictly reject plaintext / legacy hashes and any bypass values.
-   */
-  static verifySync(attempt: string, storedHash: string): boolean {
-    if (!attempt || !storedHash) return false;
-
-    if (!storedHash.startsWith('hashsync:') && !storedHash.startsWith('pbkdf2:')) {
-      return false;
+  static hashSync(secret: string, salt?: string, iterations = PasswordSecurity.DEFAULT_ITERATIONS): string {
+    if (!secret) {
+      throw new Error('Secret is required for hashing');
     }
 
-    if (storedHash.startsWith('hashsync:')) {
-      const parts = storedHash.split(':');
-      if (parts.length < 4) return false;
-      const salt = parts[2];
-      return storedHash === this.hashSync(attempt, salt);
+    const nodeCrypto = typeof require === 'function' ? require('node:crypto') : null;
+    if (!nodeCrypto) {
+      throw new Error('Synchronous PBKDF2 hashing is not available in this runtime; use PasswordSecurity.hash()');
     }
 
-    return false;
+    const usedSalt = salt || this.generateSalt(this.DEFAULT_SALT_BYTES);
+    const derived = nodeCrypto.pbkdf2Sync(secret, Buffer.from(usedSalt, 'hex'), iterations, 32, 'sha256');
+    return `pbkdf2-sha256:${this.VERSION}:${iterations}:${usedSalt}:${derived.toString('hex')}`;
   }
 
   static async verify(attempt: string, storedHash: string): Promise<boolean> {
     if (!attempt || !storedHash) return false;
 
-    if (!storedHash.startsWith('hashsync:') && !storedHash.startsWith('pbkdf2:')) {
+    try {
+      if (storedHash.startsWith('pbkdf2-sha256:')) {
+        const parts = storedHash.split(':');
+        if (parts.length !== 5) return false;
+        const [, , version, iterationsValue, salt, expectedHash] = parts;
+        if (version !== this.VERSION) {
+          return false;
+        }
+        const iterations = Number.parseInt(iterationsValue, 10);
+        if (!Number.isFinite(iterations) || iterations < 1) {
+          return false;
+        }
+        const derived = await this.hash(attempt, salt, iterations);
+        const compareTarget = derived.split(':');
+        const expected = compareTarget[4] ?? '';
+        return this.constantTimeEquals(expected, expectedHash);
+      }
+
+      if (storedHash.startsWith('pbkdf2:sha256:')) {
+        // Legacy construction: not actual PBKDF2. Treat as needing migration.
+        const parts = storedHash.split(':');
+        if (parts.length < 4) return false;
+        const legacyIterations = Number.parseInt(parts[2], 10);
+        const legacySalt = parts[3];
+        if (!Number.isFinite(legacyIterations) || legacyIterations < 1 || !legacySalt) {
+          return false;
+        }
+        const derived = await this.hash(attempt, legacySalt, legacyIterations);
+        const legacyHash = derived.split(':')[4] ?? '';
+        return this.constantTimeEquals(legacyHash, parts[4] ?? '');
+      }
+
+      if (storedHash.startsWith('hashsync:')) {
+        const parts = storedHash.split(':');
+        if (parts.length < 4) return false;
+        const salt = parts[2];
+        const legacyValue = this.hashSync(attempt, salt, 1);
+        const expected = legacyValue.split(':')[4] ?? '';
+        return this.constantTimeEquals(expected, parts[3] ?? '');
+      }
+
+      return false;
+    } catch {
       return false;
     }
+  }
 
-    if (storedHash.startsWith('pbkdf2:')) {
+  static verifySync(attempt: string, storedHash: string): boolean {
+    if (!attempt || !storedHash) return false;
+
+    try {
+      if (storedHash.startsWith('pbkdf2-sha256:')) {
+        const parts = storedHash.split(':');
+        if (parts.length !== 5) return false;
+        const [, , version, iterationsValue, salt, expectedHash] = parts;
+        if (version !== this.VERSION) return false;
+        const iterations = Number.parseInt(iterationsValue, 10);
+        if (!Number.isFinite(iterations) || iterations < 1) return false;
+        const derived = this.hashSync(attempt, salt, iterations);
+        const actualHash = derived.split(':')[4] ?? '';
+        return this.constantTimeEquals(actualHash, expectedHash);
+      }
+
+      if (storedHash.startsWith('hashsync:')) {
+        const parts = storedHash.split(':');
+        if (parts.length < 4) return false;
+        const salt = parts[2];
+        const legacy = this.hashSync(attempt, salt, 1);
+        const actualHash = legacy.split(':')[4] ?? '';
+        return this.constantTimeEquals(actualHash, parts[3] ?? '');
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  static needsRehash(storedHash: string): boolean {
+    if (!storedHash) return false;
+
+    if (storedHash.startsWith('pbkdf2-sha256:')) {
       const parts = storedHash.split(':');
-      if (parts.length < 4) return false;
-      const salt = parts[2];
-      const expected = await this.hash(attempt, salt);
-      return storedHash === expected;
+      if (parts.length !== 5) return true;
+      const iterations = Number.parseInt(parts[3], 10);
+      return !Number.isFinite(iterations) || iterations < this.DEFAULT_ITERATIONS;
     }
 
-    return this.verifySync(attempt, storedHash);
+    if (storedHash.startsWith('pbkdf2:sha256:') || storedHash.startsWith('hashsync:')) {
+      return true;
+    }
+
+    return false;
   }
 }
