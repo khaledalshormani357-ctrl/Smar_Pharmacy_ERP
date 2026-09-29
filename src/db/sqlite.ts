@@ -272,20 +272,9 @@ export class SQLiteEngine {
       { id: 'storekeeper', title_ar: 'أمين مخزن', permissions: ['inventory', 'purchases', 'stock_movements'] }
     ];
 
-    const users: User[] = [
-      {
-        id: 'user-01',
-        username: 'admin',
-        full_name: 'د. خالد الشرماني',
-        password_hash: PasswordSecurity.hashSync('123456'),
-        pin_code: PasswordSecurity.hashSync('1234'),
-        role_id: 'admin',
-        biometric_enabled: true,
-        is_active: true,
-        created_at: now,
-        updated_at: now
-      }
-    ];
+    // IMPORTANT: Do NOT create a production administrator with default credentials.
+    // For a fresh installation the users array must be empty so the app shows a secure onboarding flow.
+    const users: User[] = [];
 
     const categories: Category[] = [
       { id: 'cat-01', name_ar: 'مسكنات وخافض حرارة', is_active: true },
