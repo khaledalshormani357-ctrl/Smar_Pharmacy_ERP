@@ -3,7 +3,6 @@
 
 import { MigrationManager } from './migrations';
 import { TransactionManager } from './transaction';
-import { PasswordSecurity } from '../utils/security';
 import {
   PharmacyProfile,
   User,
@@ -105,10 +104,6 @@ export class SQLiteEngine {
     this.saveState();
   }
 
-  /**
-   * Fast, low-latency deep-clone snapshot without JSON.stringify overhead.
-   * Preserves exact row states for instant rollback on error.
-   */
   private createSnapshot(): DatabaseState {
     const snapshot: any = {};
     for (const key of Object.keys(this.state) as Array<keyof DatabaseState>) {
@@ -167,18 +162,15 @@ export class SQLiteEngine {
     }
   }
 
-  // Atomic transaction runner with PRAGMA foreign_keys = ON and automatic rollback on error
   public transaction<T>(callback: () => T): T {
     const backup = this.createSnapshot();
     try {
       const result = callback();
-      // Enforce PRAGMA foreign_keys = ON check on state
       TransactionManager.verifyForeignKeys(this.state);
       this.notify();
       return result;
     } catch (error) {
       console.error('Transaction rollback triggered due to error:', error);
-      // Restore state in-place so existing references to state remain valid
       Object.keys(this.state).forEach((k) => delete (this.state as any)[k]);
       Object.assign(this.state, backup);
       throw error;
@@ -217,7 +209,7 @@ export class SQLiteEngine {
       console.warn('Could not read existing state, seeding new database', e);
       state = this.seedDatabase();
     }
-    // Run versioned migrations deterministically
+
     MigrationManager.runMigrations(state);
     if (!state.sync_outbox) {
       state.sync_outbox = [];
@@ -258,7 +250,7 @@ export class SQLiteEngine {
       default_profit_margin_bps: 2000,
       receipt_paper_size: '80mm',
       receipt_footer_text: 'نتمنى لكم دوام الصحة والعافية - يرجى مراجعة الصيدلية خلال 3 أيام للإرجاع مع الفاتورة',
-      tax_rate_bps: 0, // Configurable VAT rate in basis points (default 0 for tax-exempt medicine)
+      tax_rate_bps: 0,
       near_expiry_days: 90,
       device_id: deviceId,
       sync_status: 'synced',
@@ -272,8 +264,7 @@ export class SQLiteEngine {
       { id: 'storekeeper', title_ar: 'أمين مخزن', permissions: ['inventory', 'purchases', 'stock_movements'] }
     ];
 
-    // IMPORTANT: Do NOT create a production administrator with default credentials.
-    // For a fresh installation the users array must be empty so the app shows a secure onboarding flow.
+    // Security requirement: a fresh installation must not attach a production admin with known default credentials.
     const users: User[] = [];
 
     const categories: Category[] = [
