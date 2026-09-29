@@ -113,24 +113,70 @@ export function App() {
     return unsub;
   }, []);
 
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+
   const handleUnlock = (e: React.FormEvent) => {
     e.preventDefault();
-    const isValidPin =
-      (currentUser.pin_code && PasswordSecurity.verifySync(pinInput, currentUser.pin_code)) ||
-      PasswordSecurity.verifySync(pinInput, currentUser.password_hash) ||
-      pinInput === '1234';
 
-    if (isValidPin) {
+    if (lockoutUntil && Date.now() < lockoutUntil) {
+      const waitSec = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      setLockError(true);
+      return;
+    }
+
+    if (!pinInput.trim()) {
+      setLockError(true);
+      return;
+    }
+
+    // Strict verification: NEVER allow universal bypass '1234'
+    const isPinMatch = currentUser?.pin_code
+      ? PasswordSecurity.verifySync(pinInput, currentUser.pin_code)
+      : false;
+    const isPasswordMatch = currentUser?.password_hash
+      ? PasswordSecurity.verifySync(pinInput, currentUser.password_hash)
+      : false;
+
+    const isValid = isPinMatch || isPasswordMatch;
+
+    if (isValid) {
       setIsLocked(false);
       setPinInput('');
       setLockError(false);
+      setFailedAttempts(0);
+      setLockoutUntil(null);
+
+      // Automatic seamless hash upgrade if user had legacy hash
+      if (currentUser?.pin_code && PasswordSecurity.needsRehash(currentUser.pin_code)) {
+        try {
+          db.transaction(() => {
+            const state = db.getState();
+            const u = state.users.find((usr) => usr.id === currentUser.id);
+            if (u) {
+              u.pin_code = PasswordSecurity.hashSync(pinInput);
+              u.updated_at = Date.now();
+            }
+          });
+        } catch {}
+      }
     } else {
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
       setLockError(true);
+
+      // Lockout protection after 5 failed attempts
+      if (newAttempts >= 5) {
+        setLockoutUntil(Date.now() + 30000); // 30 seconds penalty
+      }
     }
   };
 
   // Lock screen view
   if (isLocked) {
+    const isLockedOut = lockoutUntil !== null && Date.now() < lockoutUntil;
+    const remainingSeconds = isLockedOut ? Math.ceil((lockoutUntil - Date.now()) / 1000) : 0;
+
     return (
       <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-4 font-sans" dir="rtl">
         <div className="bg-slate-800/90 border border-slate-700 p-6 rounded-3xl max-w-xs w-full text-center shadow-2xl">
@@ -144,17 +190,24 @@ export function App() {
             <input
               type="password"
               autoFocus
-              maxLength={6}
+              maxLength={12}
+              disabled={isLockedOut}
               value={pinInput}
               onChange={(e) => {
                 setPinInput(e.target.value);
                 setLockError(false);
               }}
-              placeholder="رمز PIN (افتراضي: 1234)"
-              className="w-full py-3 px-4 text-center text-lg font-mono tracking-widest bg-slate-900/80 border border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              placeholder="رمز PIN الشخصي للمستخدم"
+              className="w-full py-3 px-4 text-center text-lg font-mono tracking-widest bg-slate-900/80 border border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none disabled:opacity-50"
             />
 
-            {lockError && <p className="text-xs text-rose-400 font-medium">رمز PIN غير صحيح</p>}
+            {isLockedOut ? (
+              <p className="text-xs text-rose-400 font-bold animate-pulse">
+                تم قفل الإدخال مؤقتاً لكثرة المحاولات الخاطئة. انتظر {remainingSeconds} ثانية...
+              </p>
+            ) : (
+              lockError && <p className="text-xs text-rose-400 font-medium">رمز PIN غير صحيح</p>
+            )}
 
             <button
               type="submit"

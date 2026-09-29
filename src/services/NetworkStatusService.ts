@@ -46,6 +46,7 @@ export class NetworkStatusServiceClass {
   private syncOnReconnect = true;
   private lastPingTime = 0;
   private syncCallback: (() => Promise<any>) | null = null;
+  private customApiBaseUrl: string | null = null;
 
   constructor() {
     this.init();
@@ -212,11 +213,17 @@ export class NetworkStatusServiceClass {
    * Retrieves active API Base URL with override support
    */
   public getApiBaseUrl(): string {
+    if (this.customApiBaseUrl && this.customApiBaseUrl.trim()) {
+      return this.customApiBaseUrl.trim().replace(/\/+$/, '');
+    }
+
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('smart_pharmacy_api_base_url');
-      if (saved && saved.trim()) {
-        return saved.trim().replace(/\/+$/, '');
-      }
+      try {
+        const saved = localStorage.getItem('smart_pharmacy_api_base_url');
+        if (saved && saved.trim()) {
+          return saved.trim().replace(/\/+$/, '');
+        }
+      } catch {}
     }
 
     const envBase = (import.meta as any).env?.VITE_API_BASE_URL;
@@ -237,11 +244,15 @@ export class NetworkStatusServiceClass {
    * Allows user or diagnostics to set a custom backend host URL
    */
   public setCustomApiBaseUrl(url: string | null) {
-    if (typeof window === 'undefined') return;
-    if (url && url.trim()) {
-      localStorage.setItem('smart_pharmacy_api_base_url', url.trim());
-    } else {
-      localStorage.removeItem('smart_pharmacy_api_base_url');
+    this.customApiBaseUrl = url && url.trim() ? url.trim() : null;
+    if (typeof window !== 'undefined') {
+      try {
+        if (url && url.trim()) {
+          localStorage.setItem('smart_pharmacy_api_base_url', url.trim());
+        } else {
+          localStorage.removeItem('smart_pharmacy_api_base_url');
+        }
+      } catch {}
     }
   }
 

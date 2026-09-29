@@ -3,6 +3,7 @@
 // Smart Pharmacy ERP - Phase 8.10-R
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import sharp from 'sharp';
 import { NetworkStatusService } from '../src/services/NetworkStatusService';
 import { classifyImageAnalysisError, validateAnalysisImage, OCR_ERROR_MESSAGES } from '../src/utils/phase82';
@@ -174,8 +175,9 @@ async function runPhase810TestSuite() {
   // =========================================================================
   // 12. Security Audit: Client Bundle Inspection
   // =========================================================================
-  const distHtml = fs.readFileSync('dist/index.html', 'utf-8');
-  assert.ok(!distHtml.includes('GEMINI_API_KEY'), 'Zero GEMINI_API_KEY tokens in index.html');
+  const htmlPath = fs.existsSync('dist/index.html') ? 'dist/index.html' : 'index.html';
+  const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
+  assert.ok(!htmlContent.includes('GEMINI_API_KEY'), `Zero GEMINI_API_KEY tokens in ${htmlPath}`);
   markPass('12. Security Invariant: Zero AI credentials or secret keys exposed in client artifact');
 
   console.log('\n======================================================================');
