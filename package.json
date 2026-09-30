@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "npx tsx test_phase1.ts && npx tsx test_phase2.ts && npx tsx test_phase3_verification.ts && npx tsx test_phase4.ts && npx tsx test_phase5.ts && npx tsx test_phase6.ts && npx tsx test_phase7.ts && npx tsx test_phase8_2.ts && npx tsx test_phase8_3.ts && npx tsx test_phase8_4.ts && npx tsx test_phase8_5.ts && npx tsx test_phase8_8.ts && npx tsx tests/test_phase8_9.ts && npx tsx tests/test_phase_p0_security.ts && npx tsx tests/test_phase8_10_ocr_diagnostic.ts",
+    "test": "npx tsx test_phase1.ts && npx tsx test_phase2.ts && npx tsx test_phase3_verification.ts && npx tsx test_phase4.ts && npx tsx test_phase5.ts && npx tsx test_phase6.ts && npx tsx test_phase7.ts && npx tsx test_phase8_2.ts && npx tsx test_phase8_3.ts && npx tsx test_phase8_4.ts && npx tsx test_phase8_5.ts && npx tsx test_phase8_8.ts && npx tsx tests/test_phase8_9.ts && npx tsx tests/test_phase_p0_security.ts && npx tsx tests/test_phase_p1_sqlite.ts && npx tsx tests/test_phase8_10_ocr_diagnostic.ts && npx tsx tests/test_p1_5_gates.ts",
     "cap:sync": "npx cap sync android",
     "build:android": "npm run build && npx cap sync android"
   },
@@ -25,6 +25,7 @@
     "@google/genai": "^2.4.0",
     "@pdf-lib/fontkit": "^1.1.1",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-react": "^5.0.4",
     "bidi-js": "^1.1.0",
     "dotenv": "^17.2.3",
@@ -35,6 +36,7 @@
     "pdf-lib": "^1.17.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "sql.js": "^1.14.2",
     "vite": "^6.2.3"
   },
   "devDependencies": {

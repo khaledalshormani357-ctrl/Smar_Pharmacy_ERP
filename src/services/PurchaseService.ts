@@ -3,6 +3,7 @@
 import { db } from '../db/sqlite';
 import { TransactionManager } from '../db/transaction';
 import { AuditManager } from '../db/audit';
+import { OutboxManager } from '../db/outbox';
 import { AuthorizationService } from './AuthorizationService';
 import {
   Batch,
@@ -403,18 +404,12 @@ export class PurchaseService {
 
         // 10. Queue into Outbox for idempotent cloud sync (Section 10)
         if (state.profile?.id) {
-          state.sync_outbox.push({
-            id: 'outbox-' + Math.random().toString(36).substring(2, 9) + '-' + now.toString().slice(-4),
-            operation_id: `purchase_op_${purchaseId}`,
+          OutboxManager.enqueue({
             pharmacy_id: state.profile.id,
             entity_type: 'purchase',
             entity_id: purchaseId,
             action: 'create',
-            payload: purchaseDoc,
-            status: 'pending',
-            retry_count: 0,
-            max_retries: 5,
-            created_at: now
+            payload: purchaseDoc
           });
         }
 

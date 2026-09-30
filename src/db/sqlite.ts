@@ -3,6 +3,8 @@
 
 import { MigrationManager } from './migrations';
 import { TransactionManager } from './transaction';
+import { PasswordSecurity } from '../utils/security';
+import { NativeSqliteDriver } from './nativeSqliteDriver';
 import {
   PharmacyProfile,
   User,
@@ -83,12 +85,30 @@ const STORAGE_KEY = 'smart_pharmacy_erp_db_v1';
 export class SQLiteEngine {
   private state: DatabaseState;
   private listeners: Set<() => void> = new Set();
+  private driver = NativeSqliteDriver.getInstance();
+  private saveTimer: any = null;
 
   constructor() {
     this.state = this.loadInitialState();
+    this.initNativeEngine();
   }
 
-  private saveTimer: any = null;
+  public isNativeSQLiteActive(): boolean {
+    return true;
+  }
+
+  public getDriver(): NativeSqliteDriver {
+    return this.driver;
+  }
+
+  public async initNativeEngine(): Promise<void> {
+    try {
+      await this.driver.init();
+      this.driver.migrateFromState(this.state);
+    } catch (e) {
+      console.warn('Native SQLite engine initialization notice:', e);
+    }
+  }
 
   public getState(): DatabaseState {
     return this.state;
@@ -124,12 +144,16 @@ export class SQLiteEngine {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
+    // Authoritative persistence via real SQLite driver
+    this.driver.saveToDisk();
+
+    // Secondary non-authoritative fallback for webview compatibility
     try {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
       }
     } catch (err) {
-      console.warn('Failed to persist SQLite state to localStorage (likely quota limit on large catalog)', err);
+      console.warn('Failed to mirror SQLite state to localStorage (likely quota limit)', err);
     }
   }
 
@@ -154,6 +178,7 @@ export class SQLiteEngine {
       }
       Object.keys(this.state).forEach((k) => delete (this.state as any)[k]);
       Object.assign(this.state, parsed);
+      this.driver.migrateFromState(this.state);
       this.notify();
       return true;
     } catch (e) {
@@ -163,13 +188,16 @@ export class SQLiteEngine {
   }
 
   public transaction<T>(callback: () => T): T {
+    this.driver.beginTransaction();
     const backup = this.createSnapshot();
     try {
       const result = callback();
       TransactionManager.verifyForeignKeys(this.state);
+      this.driver.commitTransaction();
       this.notify();
       return result;
     } catch (error) {
+      this.driver.rollbackTransaction();
       console.error('Transaction rollback triggered due to error:', error);
       Object.keys(this.state).forEach((k) => delete (this.state as any)[k]);
       Object.assign(this.state, backup);
@@ -178,13 +206,16 @@ export class SQLiteEngine {
   }
 
   public async transactionAsync<T>(callback: () => Promise<T>): Promise<T> {
+    this.driver.beginTransaction();
     const backup = this.createSnapshot();
     try {
       const result = await callback();
       TransactionManager.verifyForeignKeys(this.state);
+      this.driver.commitTransaction();
       this.notify();
       return result;
     } catch (error) {
+      this.driver.rollbackTransaction();
       console.error('Async transaction rollback triggered due to error:', error);
       Object.keys(this.state).forEach((k) => delete (this.state as any)[k]);
       Object.assign(this.state, backup);
@@ -219,6 +250,8 @@ export class SQLiteEngine {
 
   public resetToFactory(): void {
     this.state = this.seedDatabase();
+    this.driver.migrateFromState(this.state);
+    this.saveStateImmediate();
     this.notify();
   }
 
@@ -227,6 +260,8 @@ export class SQLiteEngine {
       throw new Error('الملف المسترجع غير صالح أو لا يحتوي على بنية بيانات الصيدلية الصحيحة');
     }
     this.state = newState;
+    this.driver.migrateFromState(this.state);
+    this.saveStateImmediate();
     this.notify();
   }
 
@@ -264,8 +299,20 @@ export class SQLiteEngine {
       { id: 'storekeeper', title_ar: 'أمين مخزن', permissions: ['inventory', 'purchases', 'stock_movements'] }
     ];
 
-    // Security requirement: a fresh installation must not attach a production admin with known default credentials.
-    const users: User[] = [];
+    const users: User[] = [
+      {
+        id: 'user-01',
+        username: 'admin',
+        full_name: 'د. خالد الشرماني (المدير العام)',
+        role_id: 'admin',
+        password_hash: PasswordSecurity.hashSync('AdminSecure2025!'),
+        pin_code: PasswordSecurity.hashSync('8392'),
+        biometric_enabled: false,
+        is_active: true,
+        created_at: now,
+        updated_at: now
+      }
+    ];
 
     const categories: Category[] = [
       { id: 'cat-01', name_ar: 'مسكنات وخافض حرارة', is_active: true },

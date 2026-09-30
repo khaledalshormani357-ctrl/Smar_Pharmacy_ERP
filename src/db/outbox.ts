@@ -6,8 +6,23 @@ import { SyncOutboxEntry, SyncSummary } from '../types';
 
 export class OutboxManager {
   /**
+   * Generates a stable, deterministic operation identity for business idempotency.
+   * Format: pharmacy_id:entity_type:entity_id:action:version
+   */
+  static generateOperationId(
+    pharmacy_id: string,
+    entity_type: string,
+    entity_id: string,
+    action: string,
+    version = 'v1'
+  ): string {
+    return `${pharmacy_id}:${entity_type}:${entity_id}:${action}:${version}`;
+  }
+
+  /**
    * Deterministically enqueue an operation to be synced to Cloud Firestore.
-   * If an identical operation_id is already pending or synced, prevents duplicates.
+   * If an identical operation_id is already present (pending, processing, retry, or synced),
+   * prevents duplicates and guarantees business idempotency.
    */
   static enqueue(params: {
     pharmacy_id: string;
@@ -16,6 +31,7 @@ export class OutboxManager {
     action: 'create' | 'update' | 'delete';
     payload: any;
     operation_id?: string;
+    version?: string;
     max_retries?: number;
   }): SyncOutboxEntry {
     const state = db.getState();
@@ -25,12 +41,16 @@ export class OutboxManager {
 
     const operationId =
       params.operation_id ||
-      `${params.pharmacy_id}_${params.entity_type}_${params.entity_id}_${params.action}_${Date.now()}`;
+      OutboxManager.generateOperationId(
+        params.pharmacy_id,
+        params.entity_type,
+        params.entity_id,
+        params.action,
+        params.version || 'v1'
+      );
 
-    // Check if duplicate operation is already pending
-    const existing = state.sync_outbox.find(
-      (e) => e.operation_id === operationId && (e.status === 'pending' || e.status === 'processing')
-    );
+    // Strict Idempotency Check: if operation already exists, do not duplicate
+    const existing = state.sync_outbox.find((e) => e.operation_id === operationId);
     if (existing) {
       return existing;
     }
