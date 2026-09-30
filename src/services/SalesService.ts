@@ -5,6 +5,7 @@ import { db } from '../db/sqlite';
 import { StockService } from './StockService';
 import { TransactionManager } from '../db/transaction';
 import { AuditManager } from '../db/audit';
+import { AuthorizationService } from './AuthorizationService';
 import {
   CartItem,
   Sale,
@@ -58,6 +59,8 @@ export class SalesService {
    * 9. Commit transaction or Rollback entirely on ANY failure
    */
   static createSale(payload: CheckoutPayload): Sale {
+    AuthorizationService.checkPermission(payload.user_id, 'sales');
+
     if (!payload.items || payload.items.length === 0) {
       throw new Error('السلة فارغة. يرجى إضافة أصناف قبل إتمام البيع.');
     }

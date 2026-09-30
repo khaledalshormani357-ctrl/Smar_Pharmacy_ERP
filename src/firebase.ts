@@ -1,13 +1,20 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer, collection, getDocs, setDoc, query, where, onSnapshot } from 'firebase/firestore';
+import { initializeFirestore, doc, getDocFromServer, collection, getDocs, setDoc, query, where, onSnapshot } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase App
 export const app = initializeApp(firebaseConfig);
 
 // CRITICAL: Connect to specific Firestore database instance configured for the app
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// With auto-detect long polling enabled to prevent 10s WebChannel timeout in browser/iframe
+export const db = initializeFirestore(
+  app,
+  {
+    experimentalAutoDetectLongPolling: true
+  },
+  firebaseConfig.firestoreDatabaseId
+);
 
 // Initialize Firebase Auth
 export const auth = getAuth(app);

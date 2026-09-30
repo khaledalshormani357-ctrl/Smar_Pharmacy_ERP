@@ -55,7 +55,7 @@ export const UsersView: React.FC = () => {
     setUsername(user.username);
     setFullName(user.full_name);
     setRoleId(user.role_id);
-    setPinCode(user.pin_code || '');
+    setPinCode(''); // Do not display hashed PIN
     setPassword('');
     setBiometricEnabled(user.biometric_enabled || false);
     setShowAddModal(true);
@@ -95,13 +95,21 @@ export const UsersView: React.FC = () => {
         return;
       }
 
-      if (pinCode && !/^\d{4,6}$/.test(pinCode.trim())) {
-        setMessage({ text: 'رمز PIN يجب أن يتكون من 4 إلى 6 أرقام فقط.', type: 'error' });
-        return;
+      if (pinCode.trim()) {
+        const pinCheck = PasswordSecurity.validatePinComplexity(pinCode.trim());
+        if (!pinCheck.valid) {
+          setMessage({ text: pinCheck.reason || 'رمز PIN غير صالح.', type: 'error' });
+          return;
+        }
       }
 
       if (!editingUser && !password) {
         setMessage({ text: 'كلمة المرور مطلوبة للمستخدم الجديد.', type: 'error' });
+        return;
+      }
+
+      if (!editingUser && !pinCode.trim()) {
+        setMessage({ text: 'رمز PIN إلزامي للمستخدم الجديد.', type: 'error' });
         return;
       }
 
@@ -116,7 +124,9 @@ export const UsersView: React.FC = () => {
           target.full_name = fullName.trim();
           target.role_id = roleId;
           target.biometric_enabled = biometricEnabled;
-          if (pinCode.trim()) target.pin_code = pinCode.trim();
+          if (pinCode.trim()) {
+            target.pin_code = PasswordSecurity.hashSync(pinCode.trim());
+          }
           if (password) {
             target.password_hash = PasswordSecurity.hashSync(password);
           }
@@ -132,7 +142,7 @@ export const UsersView: React.FC = () => {
             username: username.trim().toLowerCase(),
             full_name: fullName.trim(),
             password_hash: PasswordSecurity.hashSync(password),
-            pin_code: pinCode.trim() || '1234',
+            pin_code: PasswordSecurity.hashSync(pinCode.trim()),
             role_id: roleId,
             biometric_enabled: biometricEnabled,
             is_active: true,

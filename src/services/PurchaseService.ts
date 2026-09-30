@@ -3,6 +3,7 @@
 import { db } from '../db/sqlite';
 import { TransactionManager } from '../db/transaction';
 import { AuditManager } from '../db/audit';
+import { AuthorizationService } from './AuthorizationService';
 import {
   Batch,
   Purchase,
@@ -57,6 +58,8 @@ export class PurchaseService {
    * Atomic, idempotent purchase invoice creation and stock receiving
    */
   static createPurchase(payload: PurchasePayload): Purchase {
+    AuthorizationService.checkPermission(payload.user_id, 'purchases');
+
     if (!payload.items || payload.items.length === 0) {
       throw new Error('يرجى إضافة أصناف التوريد أولاً.');
     }

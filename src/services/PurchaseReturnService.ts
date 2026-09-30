@@ -6,6 +6,7 @@ import { DomainValidator } from '../db/validation';
 import { AuditManager } from '../db/audit';
 import { TransactionManager } from '../db/transaction';
 import { StockService } from './StockService';
+import { AuthorizationService } from './AuthorizationService';
 import {
   PurchaseReturn,
   PurchaseReturnItem,
@@ -33,6 +34,7 @@ export interface CreatePurchaseReturnPayload {
 export class PurchaseReturnService {
   static createPurchaseReturn(payload: CreatePurchaseReturnPayload): PurchaseReturn {
     const userId = payload.userId || 'user-01';
+    AuthorizationService.checkPermission(userId, ['returns', 'purchases']);
 
     if (!payload.purchase_id) {
       throw new Error('رقم فاتورة المشتريات الأصلية إلزامي لإنشاء مردود مشتريات.');

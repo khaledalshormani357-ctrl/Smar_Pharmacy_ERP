@@ -6,6 +6,7 @@ import { DomainValidator } from '../db/validation';
 import { AuditManager } from '../db/audit';
 import { TransactionManager } from '../db/transaction';
 import { StockService } from './StockService';
+import { AuthorizationService } from './AuthorizationService';
 import {
   SaleReturn,
   SaleReturnItem,
@@ -39,6 +40,7 @@ export interface CreateSaleReturnPayload {
 export class SalesReturnService {
   static createSaleReturn(payload: CreateSaleReturnPayload): SaleReturn {
     const userId = payload.userId || 'user-01';
+    AuthorizationService.checkPermission(userId, ['returns', 'sales']);
 
     if (!payload.sale_id) {
       throw new Error('رقم الفاتورة الأصلية إلزامي لإنشاء مردود مبيعات.');
