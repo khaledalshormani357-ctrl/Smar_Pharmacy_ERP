@@ -91,53 +91,6 @@ export const NumericInput: React.FC<NumericInputProps> = ({
     }
   };
 
-  /**
-   * Android beforeinput interception:
-   * Handles virtual keyboard Backspace (deleteContentBackward) and Delete (deleteContentForward)
-   * explicitly for maximum reliability across Samsung, Gboard, and Xiaomi keyboards.
-   */
-  const handleBeforeInput = (event: React.FormEvent<HTMLInputElement>) => {
-    const nativeEvent = event.nativeEvent as InputEvent;
-    if (!nativeEvent || !inputRef.current) return;
-
-    const input = inputRef.current;
-    const start = input.selectionStart ?? 0;
-    const end = input.selectionEnd ?? 0;
-    const currentVal = input.value;
-
-    if (nativeEvent.inputType === 'deleteContentBackward') {
-      isEditingRef.current = true;
-      if (start !== end) {
-        // Range selection deletion
-        const newText = currentVal.substring(0, start) + currentVal.substring(end);
-        cursorPositionRef.current = start;
-        applyNewValue(newText, start);
-        event.preventDefault();
-      } else if (start > 0) {
-        // Single character backspace before cursor
-        const newText = currentVal.substring(0, start - 1) + currentVal.substring(start);
-        cursorPositionRef.current = start - 1;
-        applyNewValue(newText, start - 1);
-        event.preventDefault();
-      }
-    } else if (nativeEvent.inputType === 'deleteContentForward') {
-      isEditingRef.current = true;
-      if (start !== end) {
-        // Range selection deletion
-        const newText = currentVal.substring(0, start) + currentVal.substring(end);
-        cursorPositionRef.current = start;
-        applyNewValue(newText, start);
-        event.preventDefault();
-      } else if (start < currentVal.length) {
-        // Single character delete after cursor
-        const newText = currentVal.substring(0, start) + currentVal.substring(start + 1);
-        cursorPositionRef.current = start;
-        applyNewValue(newText, start);
-        event.preventDefault();
-      }
-    }
-  };
-
   const applyNewValue = (rawVal: string, targetCursor: number | null) => {
     // 1. Normalize Arabic and Persian numerals to ASCII digits (1-to-1 character length mapping)
     const normalized = normalizeInputText(rawVal);
@@ -185,44 +138,6 @@ export const NumericInput: React.FC<NumericInputProps> = ({
     }
   };
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    isEditingRef.current = true;
-    if (event.key === 'Backspace' || event.key === 'Delete') {
-      // Hardware / Desktop keyboard backspace / delete
-      const input = inputRef.current;
-      if (!input) return;
-      const start = input.selectionStart ?? 0;
-      const end = input.selectionEnd ?? 0;
-      const currentVal = input.value;
-
-      if (event.key === 'Backspace') {
-        if (start !== end) {
-          const newText = currentVal.substring(0, start) + currentVal.substring(end);
-          cursorPositionRef.current = start;
-          applyNewValue(newText, start);
-          event.preventDefault();
-        } else if (start > 0) {
-          const newText = currentVal.substring(0, start - 1) + currentVal.substring(start);
-          cursorPositionRef.current = start - 1;
-          applyNewValue(newText, start - 1);
-          event.preventDefault();
-        }
-      } else if (event.key === 'Delete') {
-        if (start !== end) {
-          const newText = currentVal.substring(0, start) + currentVal.substring(end);
-          cursorPositionRef.current = start;
-          applyNewValue(newText, start);
-          event.preventDefault();
-        } else if (start < currentVal.length) {
-          const newText = currentVal.substring(0, start) + currentVal.substring(start + 1);
-          cursorPositionRef.current = start;
-          applyNewValue(newText, start);
-          event.preventDefault();
-        }
-      }
-    }
-  };
-
   return (
     <div className="relative flex items-center w-full">
       <input
@@ -239,10 +154,8 @@ export const NumericInput: React.FC<NumericInputProps> = ({
         disabled={disabled}
         value={draft}
         onFocus={handleFocus}
-        onBeforeInput={handleBeforeInput}
         onChange={handleChange}
         onBlur={handleBlur}
-        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         dir="ltr"
         className={`w-full px-3 py-2 text-left font-mono text-slate-800 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all placeholder:text-slate-300 disabled:bg-slate-50 disabled:text-slate-400 ${

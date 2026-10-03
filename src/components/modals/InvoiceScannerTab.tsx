@@ -586,8 +586,8 @@ export const InvoiceScannerTab: React.FC = () => {
           is_new_product: !matchedId,
           batch_number: it.batch_number || '',
           expiry_date: it.expiry_date || '',
-          quantity: Math.max(1, parseInt(String(it.quantity || 1), 10)),
-          unit_name: detectedUnit,
+          quantity: Math.max(0, parseInt(String(it.quantity ?? ''), 10) || 0),
+          unit_name: detectedUnit || '',
           unit_factor: matchedFactor,
           unit_purchase_price: purchasePrice,
           unit_selling_price: sellingPrice,
@@ -606,11 +606,11 @@ export const InvoiceScannerTab: React.FC = () => {
       }
 
       setInvoiceData({
-        supplier_name: resultJson.supplier_name || 'مورد غير محدد بالفاتورة',
+        supplier_name: resultJson.supplier_name || '',
         matched_supplier_id: matchedSupId,
         is_new_supplier: !matchedSupId,
-        invoice_number: resultJson.invoice_number || `INV-${Date.now().toString().slice(-6)}`,
-        invoice_date: resultJson.invoice_date || new Date().toISOString().split('T')[0],
+        invoice_number: resultJson.invoice_number || '',
+        invoice_date: resultJson.invoice_date || '',
         payment_type: resultJson.payment_type === 'cash' ? 'cash' : 'credit',
         total_amount: resultJson.total_amount,
         items: normalizedItems,

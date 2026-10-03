@@ -9,7 +9,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Standard recommended Gemini model as per AI Studio guidelines
-const GEMINI_MODEL = 'gemini-3.8-flash';
+const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_REQUEST_TIMEOUT_MS = 45_000;
 
 /**
  * Robustly resolves the Gemini API Key from environment variables.
@@ -69,6 +70,23 @@ function getAI(): GoogleGenAI {
     });
   }
   return aiClient;
+}
+
+async function generateGeminiContentWithTimeout(
+  request: Parameters<GoogleGenAI['models']['generateContent']>[0],
+  timeoutMs = GEMINI_REQUEST_TIMEOUT_MS
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      getAI().models.generateContent(request),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('AI_REQUEST_TIMEOUT')), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /**
@@ -509,14 +527,14 @@ ${JSON.stringify((existingProducts || []).slice(0, 60).map((p: any) => ({ id: p.
       let usedModel = '';
 
       // Resilient model sequence for Vision OCR:
-      // Primary: gemini-3.8-flash -> Fallbacks: gemini-flash-latest -> gemini-3.1-flash-lite
-      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+      // Primary: currently supported Gemini 2.5 Flash -> lightweight fallback.
+      const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
       for (const modelName of candidateModels) {
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
             console.log(`[Invoice Vision AI] Attempting model ${modelName} (attempt ${attempt + 1})...`);
-            response = await ai.models.generateContent({
+            response = await generateGeminiContentWithTimeout({
               model: modelName,
               contents: [
                 {
@@ -600,9 +618,9 @@ ${JSON.stringify((existingProducts || []).slice(0, 60).map((p: any) => ({ id: p.
               trade_name_ar: it.trade_name_ar || it.product_name_ar || '',
               product_name_ar: it.product_name_ar || it.trade_name_ar || '',
               product_name_en: it.product_name_en || '',
-              quantity: typeof it.quantity === 'number' ? it.quantity : (parseFloat(it.quantity) || 1),
-              unit: it.unit || it.unit_name || 'علبة',
-              unit_name: it.unit_name || it.unit || 'علبة',
+              quantity: typeof it.quantity === 'number' ? it.quantity : (parseFloat(it.quantity) || 0),
+              unit: it.unit || it.unit_name || '',
+              unit_name: it.unit_name || it.unit || '',
               unit_price: typeof it.unit_price === 'number' ? it.unit_price : (typeof it.unit_purchase_price === 'number' ? it.unit_purchase_price : null),
               unit_purchase_price: typeof it.unit_purchase_price === 'number' ? it.unit_purchase_price : (typeof it.unit_price === 'number' ? it.unit_price : null),
               unit_selling_price: typeof it.unit_selling_price === 'number' ? it.unit_selling_price : null,

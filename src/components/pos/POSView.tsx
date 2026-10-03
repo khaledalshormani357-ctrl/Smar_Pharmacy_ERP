@@ -73,6 +73,19 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
   // Selected Customer Details
   const currentCustomer = customers.find((c) => c.id === selectedCustomerId);
 
+  // Build the normalized search index once per catalog update, not once per keystroke.
+  const productSearchIndex = useMemo(() => products.map((product) => ({
+    product,
+    nameAr: normalizeArabicSearchText(product.name_ar || ''),
+    tradeAr: normalizeArabicSearchText(product.trade_name_ar || ''),
+    genericAr: normalizeArabicSearchText(product.generic_name || ''),
+    nameEn: (product.name_en || '').toLowerCase(),
+    tradeEn: (product.trade_name_en || '').toLowerCase(),
+    genericEn: (product.generic_name || '').toLowerCase(),
+    barcode: (product.barcode || '').toLowerCase(),
+    internalCode: (product.internal_code || '').toLowerCase()
+  })), [products]);
+
   // Barcode / Search Filter (supports barcode, code, name_ar, English/generic name with Arabic normalization)
   const filteredProducts = useMemo(() => {
     const raw = searchQuery.trim();
@@ -80,16 +93,19 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
     const qLower = raw.toLowerCase();
     const qArabic = normalizeArabicSearchText(raw);
 
-    return products.filter((p) => (
-      (p.name_ar && normalizeArabicSearchText(p.name_ar).includes(qArabic)) ||
-      (p.trade_name_ar && normalizeArabicSearchText(p.trade_name_ar).includes(qArabic)) ||
-      (p.name_en && p.name_en.toLowerCase().includes(qLower)) ||
-      (p.trade_name_en && p.trade_name_en.toLowerCase().includes(qLower)) ||
-      (p.barcode && p.barcode.toLowerCase() === qLower) ||
-      (p.generic_name && (p.generic_name.toLowerCase().includes(qLower) || normalizeArabicSearchText(p.generic_name).includes(qArabic))) ||
-      p.internal_code.toLowerCase().includes(qLower)
-    ));
-  }, [products, searchQuery]);
+    return productSearchIndex
+      .filter((entry) => (
+        entry.nameAr.includes(qArabic) ||
+        entry.tradeAr.includes(qArabic) ||
+        entry.nameEn.includes(qLower) ||
+        entry.tradeEn.includes(qLower) ||
+        entry.genericAr.includes(qArabic) ||
+        entry.genericEn.includes(qLower) ||
+        entry.barcode === qLower ||
+        entry.internalCode.includes(qLower)
+      ))
+      .map((entry) => entry.product);
+  }, [productSearchIndex, searchQuery]);
 
   const displayedFilteredProducts = useMemo(() => {
     return filteredProducts.slice(0, 30);
