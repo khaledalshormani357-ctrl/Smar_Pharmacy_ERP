@@ -19,6 +19,11 @@ import { Product, Batch, SaleItemAllocation } from './src/types';
 let passed = 0;
 let failed = 0;
 
+const fixtureDate = (daysFromNow: number) => {
+  const date = new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000);
+  return date.toISOString().slice(0, 10);
+};
+
 function assert(condition: boolean, testName: string) {
   if (condition) {
     console.log(`[PASS] ${testName}`);
@@ -138,11 +143,11 @@ async function runPharmacyCoreTests() {
   // ----------------------------------------------------
   // SECTION 4: BATCHES & OPENING STOCK (Atomic Operation)
   // ----------------------------------------------------
-  // Batch A: Expiring 2026-10-01 (Earliest expiry), Cost: 2000 (20.00 YER), Qty: 20
+  // Batch A: earliest future expiry, Cost: 2000 (20.00 YER), Qty: 20
   const batchA = StockService.addOpeningStock({
     productId: prodId,
     batchNumber: 'BATCH-A-2026',
-    expiryDate: '2026-10-01',
+    expiryDate: fixtureDate(30),
     quantityBase: 20,
     purchaseCostMinor: 2000,
     sellingPriceMinor: 3500,
@@ -150,11 +155,11 @@ async function runPharmacyCoreTests() {
   });
   assert(batchA.current_quantity === 20, 'Batch A opening stock recorded with 20 units');
 
-  // Batch B: Expiring 2027-01-01 (Second expiry), Cost: 2200 (22.00 YER), Qty: 30
+  // Batch B: second future expiry, Cost: 2200 (22.00 YER), Qty: 30
   const batchB = StockService.addOpeningStock({
     productId: prodId,
     batchNumber: 'BATCH-B-2027',
-    expiryDate: '2027-01-01',
+    expiryDate: fixtureDate(120),
     quantityBase: 30,
     purchaseCostMinor: 2200,
     sellingPriceMinor: 3500,
@@ -162,11 +167,11 @@ async function runPharmacyCoreTests() {
   });
   assert(batchB.current_quantity === 30, 'Batch B opening stock recorded with 30 units');
 
-  // Batch C: Expiring 2027-06-01 (Third expiry), Cost: 2400 (24.00 YER), Qty: 50
+  // Batch C: third future expiry, Cost: 2400 (24.00 YER), Qty: 50
   const batchC = StockService.addOpeningStock({
     productId: prodId,
     batchNumber: 'BATCH-C-2027',
-    expiryDate: '2027-06-01',
+    expiryDate: fixtureDate(240),
     quantityBase: 50,
     purchaseCostMinor: 2400,
     sellingPriceMinor: 3500,

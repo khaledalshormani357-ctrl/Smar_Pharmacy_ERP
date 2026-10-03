@@ -36,7 +36,7 @@ function getSafeUsers(): User[] {
     if (!state || !Array.isArray(state.users)) {
       return [];
     }
-    return state.users.filter((user): user is User => Boolean(user && typeof user === 'object' && user.id));
+    return state.users.filter((user): user is User => Boolean(user && typeof user === 'object' && user.id && !(user as any).requires_setup));
   } catch {
     return [];
   }
@@ -67,6 +67,11 @@ export function App() {
   const [pinInput, setPinInput] = useState('');
   const [lockError, setLockError] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [setupUsername, setSetupUsername] = useState('');
+  const [setupName, setSetupName] = useState('');
+  const [setupPassword, setSetupPassword] = useState('');
+  const [setupPin, setSetupPin] = useState('');
+  const [setupError, setSetupError] = useState<string | null>(null);
 
   // Quick modals from bottom nav or anywhere
   const [showQuickSearch, setShowQuickSearch] = useState(false);
@@ -220,15 +225,56 @@ export function App() {
           <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             لا يتم إنشاء حسابات افتراضية أو كلمات مرور عالمية.
           </div>
-          <button
-            type="button"
-            className="mt-5 w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-md"
-            onClick={() => {
-              setToastMessage('إعداد أول مستخدم متاح في شاشة الإعدادات المخصصة.');
+          <form
+            className="mt-5 space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const pinCheck = PasswordSecurity.validatePinComplexity(setupPin);
+              if (!setupUsername.trim() || !setupName.trim()) {
+                setSetupError('يرجى إدخال اسم المستخدم والاسم الكامل.');
+                return;
+              }
+              if (setupPassword.length < 10) {
+                setSetupError('كلمة المرور يجب أن تتكون من 10 أحرف/رموز على الأقل.');
+                return;
+              }
+              if (!pinCheck.valid) {
+                setSetupError(pinCheck.reason || 'رمز PIN غير صالح.');
+                return;
+              }
+              try {
+                const now = Date.now();
+                const newUser: User = {
+                  id: `user-${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}`,
+                  username: setupUsername.trim(),
+                  full_name: setupName.trim(),
+                  role_id: 'admin',
+                  password_hash: PasswordSecurity.hashSync(setupPassword),
+                  pin_code: PasswordSecurity.hashSync(setupPin),
+                  biometric_enabled: false,
+                  is_active: true,
+                  created_at: now,
+                  updated_at: now
+                };
+                db.transaction(() => {
+                  const state = db.getState();
+                  state.users = state.users.filter((user) => !(user as any).requires_setup);
+                  state.users.push(newUser);
+                });
+                setCurrentUser(newUser);
+                setSetupError(null);
+              } catch (error: any) {
+                setSetupError(error?.message || 'تعذر إنشاء المدير الأول.');
+              }
             }}
           >
-            إنشاء المدير الأول
-          </button>
+            <input required value={setupUsername} onChange={(e) => setSetupUsername(e.target.value)} placeholder="اسم المستخدم" className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" />
+            <input required value={setupName} onChange={(e) => setSetupName(e.target.value)} placeholder="الاسم الكامل" className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" />
+            <input required type="password" value={setupPassword} onChange={(e) => setSetupPassword(e.target.value)} placeholder="كلمة مرور قوية (10 رموز على الأقل)" className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" />
+            <input required inputMode="numeric" maxLength={6} value={setupPin} onChange={(e) => setSetupPin(e.target.value)} placeholder="PIN من 4 إلى 6 أرقام" className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-mono" />
+            {setupError && <p className="text-xs font-bold text-rose-600">{setupError}</p>}
+            <button type="submit" className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-md">إنشاء المدير الأول</button>
+          </form>
         </div>
       </div>
     );

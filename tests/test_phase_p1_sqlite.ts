@@ -164,7 +164,7 @@ async function runP1TestSuite() {
   const migrationResult = LocalStorageToSqliteMigrator.migrate(mockState, driver);
   assert.equal(migrationResult.success, true, 'Migration executed successfully');
   assert.ok(migrationResult.migratedCounts.roles > 0, 'Roles migrated');
-  assert.ok(migrationResult.migratedCounts.users > 0, 'Users migrated');
+  assert.equal(migrationResult.migratedCounts.users, mockState.users.length, 'User migration matches the current state');
   markPass('7. Safe migration: localStorage data successfully imported into SQLite without data deletion');
 
   // =========================================================================

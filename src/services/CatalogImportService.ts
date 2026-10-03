@@ -257,7 +257,8 @@ export class CatalogImportService {
     const stateSnapshot = {
       categories: [...state.categories],
       manufacturers: [...state.manufacturers],
-      products: [...state.products]
+      products: [...state.products],
+      unit_conversions: [...(state.unit_conversions || [])]
     };
 
     const batchSize = Math.max(10, Math.min(200, options?.batchSize || 60));
@@ -428,7 +429,7 @@ export class CatalogImportService {
               }
               const baseUnitName = prod.base_unit || 'حبة';
               state.unit_conversions.push({
-                id: 'uc-' + Math.random().toString(36).substring(2, 9),
+                id: `uc-${prod.id}-base`,
                 product_id: prod.id,
                 unit_name: baseUnitName,
                 conversion_factor: 1,
@@ -439,7 +440,7 @@ export class CatalogImportService {
               if (prod.selling_unit && prod.selling_unit !== baseUnitName) {
                 const factor = prod.pack_size && prod.pack_size > 1 ? prod.pack_size : 10;
                 state.unit_conversions.push({
-                  id: 'uc-' + Math.random().toString(36).substring(2, 9),
+                  id: `uc-${prod.id}-selling`,
                   product_id: prod.id,
                   unit_name: prod.selling_unit,
                   conversion_factor: factor,
@@ -535,6 +536,8 @@ export class CatalogImportService {
       state.categories = stateSnapshot.categories;
       state.manufacturers = stateSnapshot.manufacturers;
       state.products = stateSnapshot.products;
+      state.unit_conversions = stateSnapshot.unit_conversions;
+      db.notify();
 
       if (options?.onProgress && (err?.name === 'AbortError' || err?.message?.includes('إلغاء'))) {
         options.onProgress({

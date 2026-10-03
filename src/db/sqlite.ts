@@ -87,6 +87,7 @@ export class SQLiteEngine {
   private listeners: Set<() => void> = new Set();
   private driver = NativeSqliteDriver.getInstance();
   private saveTimer: any = null;
+  private stateRevision = 0;
 
   constructor() {
     this.state = this.loadInitialState();
@@ -103,8 +104,20 @@ export class SQLiteEngine {
 
   public async initNativeEngine(): Promise<void> {
     try {
+      const revisionAtStart = this.stateRevision;
       await this.driver.init();
-      this.driver.migrateFromState(this.state);
+      const persisted = await this.driver.loadStateSnapshotAsync();
+      if (revisionAtStart === this.stateRevision && persisted?.profile && Array.isArray(persisted.products)) {
+        MigrationManager.runMigrations(persisted);
+        Object.keys(this.state).forEach((key) => delete (this.state as any)[key]);
+        Object.assign(this.state, persisted);
+      } else {
+        // Business work may have committed while the async bridge initialized;
+        // never overwrite it with an older snapshot.
+        this.driver.migrateFromState(this.state);
+        this.driver.saveStateSnapshot(this.state);
+      }
+      this.listeners.forEach((fn) => fn());
     } catch (e) {
       console.warn('Native SQLite engine initialization notice:', e);
     }
@@ -120,7 +133,10 @@ export class SQLiteEngine {
   }
 
   public notify() {
+    this.stateRevision++;
     this.listeners.forEach((fn) => fn());
+    // The SQLite snapshot is authoritative; localStorage is only a web fallback/cache.
+    this.driver.saveStateSnapshot(this.state);
     this.saveState();
   }
 
@@ -179,6 +195,7 @@ export class SQLiteEngine {
       Object.keys(this.state).forEach((k) => delete (this.state as any)[k]);
       Object.assign(this.state, parsed);
       this.driver.migrateFromState(this.state);
+      this.driver.saveStateSnapshot(this.state);
       this.notify();
       return true;
     } catch (e) {
@@ -251,6 +268,7 @@ export class SQLiteEngine {
   public resetToFactory(): void {
     this.state = this.seedDatabase();
     this.driver.migrateFromState(this.state);
+    this.driver.saveStateSnapshot(this.state);
     this.saveStateImmediate();
     this.notify();
   }
@@ -261,6 +279,7 @@ export class SQLiteEngine {
     }
     this.state = newState;
     this.driver.migrateFromState(this.state);
+    this.driver.saveStateSnapshot(this.state);
     this.saveStateImmediate();
     this.notify();
   }
@@ -299,20 +318,23 @@ export class SQLiteEngine {
       { id: 'storekeeper', title_ar: 'أمين مخزن', permissions: ['inventory', 'purchases', 'stock_movements'] }
     ];
 
-    const users: User[] = [
-      {
-        id: 'user-01',
-        username: 'admin',
-        full_name: 'د. خالد الشرماني (المدير العام)',
-        role_id: 'admin',
-        password_hash: PasswordSecurity.hashSync('AdminSecure2025!'),
-        pin_code: PasswordSecurity.hashSync('8392'),
-        biometric_enabled: false,
-        is_active: true,
-        created_at: now,
-        updated_at: now
-      }
-    ];
+    // No default credentials. This internal marker preserves a stable actor
+    // reference for audit/legacy records, while the UI requires first-run
+    // setup and replaces it before any user can sign in.
+    const setupSecret = `setup-${crypto.randomUUID?.() || Math.random().toString(36)}-${now}`;
+    const users: User[] = [{
+      id: 'user-01',
+      username: '__first_admin_setup__',
+      full_name: 'إعداد المدير الأول',
+      role_id: 'admin',
+      password_hash: PasswordSecurity.hashSync(setupSecret),
+      pin_code: PasswordSecurity.hashSync(`${now}${Math.floor(Math.random() * 1000)}`),
+      biometric_enabled: false,
+      is_active: true,
+      created_at: now,
+      updated_at: now,
+      requires_setup: true
+    } as User];
 
     const categories: Category[] = [
       { id: 'cat-01', name_ar: 'مسكنات وخافض حرارة', is_active: true },

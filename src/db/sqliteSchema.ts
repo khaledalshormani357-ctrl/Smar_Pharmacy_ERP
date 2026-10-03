@@ -560,6 +560,13 @@ CREATE TABLE IF NOT EXISTS sync_outbox (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+-- Durable application projection snapshot. SQLite remains authoritative for restart recovery.
+CREATE TABLE IF NOT EXISTS app_state_snapshot (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  schema_version INTEGER NOT NULL,
+  state_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 
 -- Indexes for performance & query optimization
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
@@ -613,6 +620,18 @@ export const REAL_SQL_MIGRATIONS: RealSqlMigration[] = [
     sql: `
       -- Authoritative real SQLite storage marker
       CREATE INDEX IF NOT EXISTS idx_sync_outbox_created ON sync_outbox(created_at);
+    `
+  },
+  {
+    version: 5,
+    name: '005_durable_state_snapshot',
+    sql: `
+      CREATE TABLE IF NOT EXISTS app_state_snapshot (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        schema_version INTEGER NOT NULL,
+        state_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
     `
   }
 ];

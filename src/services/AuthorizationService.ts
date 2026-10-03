@@ -4,7 +4,7 @@
  */
 
 import { db } from '../db/sqlite';
-import { RoleId, User } from '../types';
+import { RoleId } from '../types';
 
 export class AuthorizationService {
   /**
@@ -12,16 +12,13 @@ export class AuthorizationService {
    * If permission is denied or account is inactive, throws an authoritative error.
    */
   static checkPermission(userId: string | undefined, requiredPermissions: string | string[]): void {
-    if (!userId) return;
+    if (!userId) {
+      throw new Error('AUTH_REQUIRED: يجب تسجيل الدخول قبل تنفيذ هذه العملية.');
+    }
 
     const state = db.getState();
     const user =
-      state.users?.find(
-        (u) => u.id === userId || u.username === userId || (userId.includes('admin') && u.role_id === 'admin')
-      ) ||
-      (userId === 'user-01'
-        ? ({ id: 'user-01', username: 'admin', full_name: 'مدير النظام الافتراضي', role_id: 'admin', is_active: true } as User)
-        : undefined);
+      state.users?.find((u) => u.id === userId || u.username === userId);
     if (!user) {
       throw new Error(`AUTH_USER_NOT_FOUND: المستخدم غير موجود (ID: ${userId}).`);
     }
@@ -67,7 +64,7 @@ export class AuthorizationService {
    * Validates if a user has one of the allowed roles
    */
   static checkRole(userId: string | undefined, allowedRoles: RoleId[]): void {
-    if (!userId) return;
+    if (!userId) throw new Error('AUTH_REQUIRED: يجب تسجيل الدخول قبل تنفيذ هذه العملية.');
     const state = db.getState();
     const user = state.users?.find((u) => u.id === userId);
     if (!user) throw new Error(`AUTH_USER_NOT_FOUND: المستخدم غير موجود (ID: ${userId}).`);

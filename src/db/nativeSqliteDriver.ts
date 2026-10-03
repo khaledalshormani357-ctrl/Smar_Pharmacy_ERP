@@ -609,4 +609,49 @@ export class NativeSqliteDriver {
     if (this.sqlDb) return this.sqlDb.export();
     return new Uint8Array();
   }
+
+  /** Persist the complete application projection so restart recovery does not depend on localStorage. */
+  public saveStateSnapshot(state: DatabaseState): void {
+    if (!state || (!this.nodeDb && !this.sqlDb && !this.capDb)) return;
+    const payload = JSON.stringify(state);
+    const params = [1, Number(state.version || 1), payload, Date.now()];
+    try {
+      if (this.capDb) {
+        void this.capDb.run(
+          `INSERT OR REPLACE INTO app_state_snapshot (id, schema_version, state_json, updated_at) VALUES (?, ?, ?, ?);`,
+          params
+        );
+      } else {
+        this.run(
+          `INSERT OR REPLACE INTO app_state_snapshot (id, schema_version, state_json, updated_at) VALUES (?, ?, ?, ?);`,
+          params
+        );
+        this.saveToDisk();
+      }
+    } catch (error) {
+      console.error('NativeSqliteDriver: state snapshot save failed', error);
+      throw error;
+    }
+  }
+
+  public loadStateSnapshot(): DatabaseState | null {
+    if (this.capDb) return null;
+    try {
+      const rows = this.query<{ state_json: string }>('SELECT state_json FROM app_state_snapshot WHERE id = 1 LIMIT 1;');
+      return rows[0]?.state_json ? JSON.parse(rows[0].state_json) as DatabaseState : null;
+    } catch {
+      return null;
+    }
+  }
+
+  public async loadStateSnapshotAsync(): Promise<DatabaseState | null> {
+    if (!this.capDb) return this.loadStateSnapshot();
+    try {
+      const result = await this.capDb.query('SELECT state_json FROM app_state_snapshot WHERE id = 1 LIMIT 1;');
+      const raw = result?.values?.[0]?.state_json;
+      return raw ? JSON.parse(raw) as DatabaseState : null;
+    } catch {
+      return null;
+    }
+  }
 }

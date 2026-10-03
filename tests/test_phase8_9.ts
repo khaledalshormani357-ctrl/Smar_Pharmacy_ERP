@@ -164,7 +164,7 @@ async function runPhase89TestSuite() {
 
   const saleCountBefore = state.sales.length;
   const offlineSale = SalesService.createSale({
-    user_id: 'usr_admin',
+    user_id: 'user-01',
     sale_type: 'cash',
     cashbox_id: cashbox.id,
     discount_amount: 0,
@@ -194,7 +194,7 @@ async function runPhase89TestSuite() {
   const offlinePurchase = PurchaseService.createPurchase({
     invoice_number: 'INV-OFFLINE-' + Math.floor(Math.random() * 100000),
     supplier_id: supplier.id,
-    user_id: 'usr_admin',
+    user_id: 'user-01',
     purchase_date: '2026-09-28',
     payment_type: 'cash',
     cashbox_id: cashbox.id,

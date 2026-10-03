@@ -373,7 +373,8 @@ export class SalesService {
             entity_type: 'sale',
             entity_id: saleId,
             action: 'create',
-            payload: newSale
+            payload: newSale,
+            operation_id: `sale_op_${saleId}`
           });
         }
 
@@ -516,7 +517,8 @@ export class SalesService {
           entity_type: 'sale',
           entity_id: sale.id,
           action: 'update',
-          payload: { status: 'cancelled', cancellation_reason: reason.trim(), updated_at: now }
+          payload: { status: 'cancelled', cancellation_reason: reason.trim(), updated_at: now },
+          operation_id: `cancel_sale_${sale.id}`
         });
       }
 

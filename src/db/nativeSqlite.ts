@@ -344,6 +344,13 @@ CREATE TABLE IF NOT EXISTS sync_outbox (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS app_state_snapshot (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  schema_version INTEGER NOT NULL,
+  state_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_products_name_ar ON products(name_ar);
@@ -417,6 +424,18 @@ export class NodeSqliteDriver {
     if (this.db) {
       this.db.close();
     }
+  }
+
+  public saveStateSnapshot(state: DatabaseState): void {
+    this.run(
+      'INSERT OR REPLACE INTO app_state_snapshot (id, schema_version, state_json, updated_at) VALUES (?, ?, ?, ?);',
+      [1, Number(state.version || 1), JSON.stringify(state), Date.now()]
+    );
+  }
+
+  public loadStateSnapshot(): DatabaseState | null {
+    const rows = this.query<{ state_json: string }>('SELECT state_json FROM app_state_snapshot WHERE id = 1 LIMIT 1;');
+    return rows[0]?.state_json ? JSON.parse(rows[0].state_json) as DatabaseState : null;
   }
 }
 

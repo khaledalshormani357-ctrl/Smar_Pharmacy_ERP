@@ -158,7 +158,7 @@ async function runPhase88Tests() {
   const purchaseRes = await PurchaseService.createPurchase({
     invoice_number: 'INV-P88-' + Math.floor(Math.random() * 100000),
     supplier_id: supplier.id,
-    user_id: 'usr_admin',
+    user_id: 'user-01',
     purchase_date: new Date().toISOString().split('T')[0],
     payment_type: 'cash',
     cashbox_id: cashbox.id,
@@ -204,7 +204,7 @@ async function runPhase88Tests() {
   // Selling price per pill: 1500 -> total: 30000 (300.00 YER)
   // COGS: 20 * 1000 = 20000 -> Gross Profit: 30000 - 20000 = 10000
   const saleRes = await SalesService.createSale({
-    user_id: 'usr_admin',
+    user_id: 'user-01',
     customer_id: undefined,
     sale_type: 'cash',
     cashbox_id: cashbox.id,
