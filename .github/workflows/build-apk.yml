@@ -31,6 +31,29 @@ jobs:
       - name: Build Web Assets
         run: npm run build
 
+      - name: Real Gemini OCR Integration Gate
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is not configured in GitHub Actions secrets."
+            exit 1
+          fi
+          npm run dev > /tmp/smart-pharmacy-ocr-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/api/health >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "OCR server did not become ready."
+              exit 1
+            fi
+            sleep 1
+          done
+          npx tsx tests/test_phase8_10_ocr_diagnostic.ts
+
       - name: Sync Capacitor Android
         run: npx cap sync android
 

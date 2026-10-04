@@ -131,7 +131,7 @@ async function runPhase810TestSuite() {
   const ocrData = await ocrRes.json();
   assert.ok(ocrData.model, 'OCR response contains modelUsed attribute');
   console.log(`   Model used by backend: ${ocrData.model}`);
-  assert.ok(['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'].includes(ocrData.model), 'Model matches approved Gemini models');
+  assert.ok(['gemini-2.5-flash', 'gemini-2.5-flash-lite'].includes(ocrData.model), 'Model matches approved Gemini models');
   markPass(`8. Real Gemini Model Response: Active model: ${ocrData.model}`);
 
   // =========================================================================
