@@ -52,7 +52,14 @@ jobs:
             fi
             sleep 1
           done
+          set +e
           npx tsx tests/test_phase8_10_ocr_diagnostic.ts
+          test_status=$?
+          if [ "$test_status" -ne 0 ]; then
+            echo "--- OCR server diagnostic log (secrets redacted by GitHub masking) ---"
+            sed -E 's/(key|token|authorization|api[-_]?key)[=:][^ ]+/\1=[REDACTED]/Ig' /tmp/smart-pharmacy-ocr-server.log || true
+          fi
+          exit "$test_status"
 
       - name: Sync Capacitor Android
         run: npx cap sync android
