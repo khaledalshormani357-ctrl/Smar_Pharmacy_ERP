@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Standard recommended Gemini model as per AI Studio guidelines
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'gemini-3.8-flash';
 const GEMINI_REQUEST_TIMEOUT_MS = 45_000;
 
 /**
@@ -527,8 +527,8 @@ ${JSON.stringify((existingProducts || []).slice(0, 60).map((p: any) => ({ id: p.
       let usedModel = '';
 
       // Resilient model sequence for Vision OCR:
-      // Primary: currently supported Gemini 2.5 Flash -> lightweight fallback.
-      const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+      // Primary and fallback confirmed by the provider for current/new accounts.
+      const candidateModels = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
 
       for (const modelName of candidateModels) {
         for (let attempt = 0; attempt < 2; attempt++) {
