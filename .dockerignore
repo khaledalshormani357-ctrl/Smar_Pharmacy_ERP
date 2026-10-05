@@ -1,0 +1,13 @@
+node_modules
+.git
+.gitignore
+android
+coverage
+dist
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.env
+.env.*
+PHASE_*_REPORT.md
+FINAL_*_REPORT.md

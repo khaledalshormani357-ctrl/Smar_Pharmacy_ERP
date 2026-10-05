@@ -237,7 +237,7 @@ export class NetworkStatusServiceClass {
     }
 
     // Default canonical production cloud backend
-    return 'https://ais-pre-s3kpf4jbgnycqoblc463mc-177021215798.europe-west2.run.app';
+    return 'https://smart-pharmacy-erp-api.onrender.com';
   }
 
   /**

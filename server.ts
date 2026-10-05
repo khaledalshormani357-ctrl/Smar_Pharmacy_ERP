@@ -1,12 +1,8 @@
 import express from 'express';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import 'dotenv/config';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Standard recommended Gemini model as per AI Studio guidelines
 const GEMINI_MODEL = 'gemini-3.8-flash';
@@ -154,7 +150,7 @@ function classifyError(err: any): { code: string; message: string; httpStatus: n
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
 
   // CORS middleware to support native Capacitor and remote clients
   app.use((req, res, next) => {

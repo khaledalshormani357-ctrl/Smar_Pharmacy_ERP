@@ -389,7 +389,7 @@ async function runPhase89TestSuite() {
   // 23. No Localhost Production Endpoint
   // =========================================================================
   // Verify resolveApiEndpoint does not return localhost when simulated under native mobile protocol
-  const simulatedCapacitorPath = 'https://ais-pre-s3kpf4jbgnycqoblc463mc-177021215798.europe-west2.run.app/api/assistant/chat';
+  const simulatedCapacitorPath = 'https://smart-pharmacy-erp-api.onrender.com/api/assistant/chat';
   assert.ok(!simulatedCapacitorPath.includes('localhost'), 'Production mobile URL must not point to localhost');
   markPass('23. No localhost production endpoint: Native mobile configuration avoids localhost');
 
