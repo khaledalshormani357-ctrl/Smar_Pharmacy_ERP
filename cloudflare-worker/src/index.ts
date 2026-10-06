@@ -67,8 +67,17 @@ async function handleOcr(request: Request, env: Env): Promise<Response> {
   const prompt = `حلل صورة فاتورة صيدلية بدقة. أعد JSON فقط دون Markdown بهذا الهيكل:
 {"supplier":"","supplier_name":"","invoice_number":"","invoice_date":"","currency":"YER","payment_type":"credit","subtotal":null,"discount":0,"tax":0,"grand_total":null,"total_amount":null,"confidence_notes":[],"items":[{"trade_name_original":"","raw_name":"","trade_name_ar":"","product_name_ar":"","product_name_en":"","quantity":0,"unit":"","unit_name":"","unit_price":null,"unit_purchase_price":null,"unit_selling_price":null,"total":null,"discount_amount":0,"barcode":"","manufacturer":"","expiry_date":"","batch_number":""}]}
 لا تخترع أي قيمة غير ظاهرة؛ اترك الحقول غير المقروءة فارغة أو null، والكمية غير المقروءة 0. استخرج أرقام التشغيلات وتواريخ الانتهاء كما تظهر. تطابق المنتجات مع القائمة إن أمكن دون اختراع بيانات. المنتجات الحالية: ${JSON.stringify(payload.existingProducts || []).slice(0, 12000)}. الموردون الحاليون: ${JSON.stringify(payload.existingSuppliers || []).slice(0, 6000)}`;
-  const result = await geminiWithFallback(env, [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType, data } }] }], { temperature: 0.1, maxOutputTokens: 3000, responseMimeType: 'application/json' });
-  const parsed = cleanJson(result.text);
+  const contents = [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType, data } }] }];
+  let result = await geminiWithFallback(env, contents, { temperature: 0.1, maxOutputTokens: 3000, responseMimeType: 'application/json' });
+  let parsed: any;
+  try {
+    parsed = cleanJson(result.text);
+  } catch {
+    // Some provider responses occasionally ignore JSON mode; retry once with the lightweight model.
+    const retry = await callGemini(env, FALLBACK_MODEL, contents, { temperature: 0.1, maxOutputTokens: 3000, responseMimeType: 'application/json' });
+    result = { text: retry, model: FALLBACK_MODEL };
+    parsed = cleanJson(result.text);
+  }
   return json({
     supplier: parsed.supplier || parsed.supplier_name || '', supplier_name: parsed.supplier_name || parsed.supplier || '',
     invoice_number: parsed.invoice_number || '', invoice_date: parsed.invoice_date || '', currency: parsed.currency || 'YER',

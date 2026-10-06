@@ -14,6 +14,7 @@ console.log('===================================================================
 
 let passedTests = 0;
 const totalTests = 12;
+const testBaseUrl = (process.env.OCR_TEST_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
 
 function markPass(name: string) {
   passedTests++;
@@ -77,7 +78,7 @@ async function runPhase810TestSuite() {
   // =========================================================================
   // 5. Server Health Reachability
   // =========================================================================
-  const healthRes = await fetch('http://localhost:3000/api/health');
+  const healthRes = await fetch(`${testBaseUrl}/api/health`);
   assert.equal(healthRes.status, 200, 'Health endpoint responds 200 OK');
   const healthData = await healthRes.json();
   assert.equal(healthData.status, 'ok', 'Health status is ok');
@@ -106,7 +107,7 @@ async function runPhase810TestSuite() {
   // =========================================================================
   console.log('   Sending real invoice image to /api/gemini/analyze-invoice...');
   const t0 = Date.now();
-  const ocrRes = await fetch('http://localhost:3000/api/gemini/analyze-invoice', {
+  const ocrRes = await fetch(`${testBaseUrl}/api/gemini/analyze-invoice`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

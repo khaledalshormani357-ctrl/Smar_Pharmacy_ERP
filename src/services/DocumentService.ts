@@ -373,6 +373,15 @@ export class DocumentService {
   static async downloadDocumentPdf(doc: DocumentData, format: 'A4' | '80mm' = 'A4') {
     const bytes = await this.generateDocumentPdf(doc, format);
     const fileName = `${doc.document_number}_${format}.pdf`;
+    const isNative = typeof window !== 'undefined' && !!(window as any)?.Capacitor?.isNativePlatform?.();
+    if (isNative) {
+      const { ShareService } = await import('./ShareService');
+      await ShareService.sharePdf(bytes, fileName, {
+        title: `تنزيل ${doc.document_type}: ${doc.document_number}`,
+        text: 'اختر حفظ الملف أو التطبيق الذي تريد فتح ملف PDF به.'
+      });
+      return;
+    }
     PdfService.downloadPdf(bytes, fileName);
   }
 

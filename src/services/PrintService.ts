@@ -4,6 +4,7 @@
 import { DocumentData, PrintOptions, PrintResult } from '../types';
 import { DocumentService } from './DocumentService';
 import { PdfService } from './PdfService';
+import { ShareService } from './ShareService';
 
 export class PrintService {
   /**
@@ -15,12 +16,17 @@ export class PrintService {
     // 1. Check if running under Capacitor Native Android
     if (typeof window !== 'undefined' && typeof (window as any)?.Capacitor !== 'undefined') {
       try {
-        // Native Android Print Hook
         const bytes = await DocumentService.generateDocumentPdf(doc, isThermal ? '80mm' : 'A4');
+        const shared = await ShareService.sharePdf(bytes, `${doc.document_number}.pdf`, {
+          title: `طباعة ${doc.document_type}: ${doc.document_number}`,
+          text: 'اختر تطبيق الطباعة أو الطابعة من نافذة مشاركة أندرويد.'
+        });
         return {
-          success: true,
+          success: shared.success,
           method: 'native_android',
-          message: 'تم إرسال أمر الطباعة إلى مدير الطباعة في أندرويد.'
+          message: shared.success
+            ? 'تم فتح نافذة أندرويد؛ اختر خدمة الطباعة أو الطابعة لإكمال الطباعة.'
+            : (shared.message || 'تعذر فتح نافذة الطباعة في أندرويد.')
         };
       } catch (err: any) {
         return {

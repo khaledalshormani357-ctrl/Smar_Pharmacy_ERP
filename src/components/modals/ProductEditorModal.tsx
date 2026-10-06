@@ -25,6 +25,7 @@ import { Product, UnitConversion, DosageForm } from '../../types';
 import { InventoryService } from '../../services/InventoryService';
 import { Money } from '../../utils/money';
 import { transliterateDrugTradeName } from '../../utils/arabicPhoneticTransliteration';
+import { NumericInput } from '../ui/NumericInput';
 
 interface ProductEditorModalProps {
   isOpen: boolean;
@@ -826,11 +827,10 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
                     <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                       سعر بيع الوحدة الأساسية (الجمهور)
                     </label>
-                    <input
-                      type="number"
-                      min="0"
+                    <NumericInput
                       value={sellingPrice}
-                      onChange={(e) => setSellingPrice(Number(e.target.value))}
+                      min={0}
+                      onChange={setSellingPrice}
                       placeholder="0"
                       className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono font-bold text-xs focus:border-emerald-500"
                     />
@@ -840,11 +840,10 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
                     <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                       سعر تكلفة الشراء المرجعي
                     </label>
-                    <input
-                      type="number"
-                      min="0"
+                    <NumericInput
                       value={purchasePrice}
-                      onChange={(e) => setPurchasePrice(Number(e.target.value))}
+                      min={0}
+                      onChange={setPurchasePrice}
                       placeholder="0"
                       className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono font-bold text-xs focus:border-emerald-500"
                     />
@@ -937,12 +936,11 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
                         <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                           معامل التحويل (كم {baseUnit}؟) <span className="text-rose-500">*</span>
                         </label>
-                        <input
-                          type="number"
-                          required
-                          min="1"
+                        <NumericInput
                           value={newUnitFactor}
-                          onChange={(e) => setNewUnitFactor(Number(e.target.value))}
+                          allowDecimals={false}
+                          min={1}
+                          onChange={setNewUnitFactor}
                           placeholder="10"
                           className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono font-bold text-xs"
                         />
@@ -952,11 +950,10 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
                         <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                           سعر بيع هذه الوحدة (مستقل)
                         </label>
-                        <input
-                          type="number"
-                          min="0"
+                        <NumericInput
                           value={newUnitPrice}
-                          onChange={(e) => setNewUnitPrice(Number(e.target.value))}
+                          min={0}
+                          onChange={setNewUnitPrice}
                           placeholder="0"
                           className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono font-bold text-xs"
                         />
@@ -1034,12 +1031,11 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
                           {/* Conversion factor input */}
                           <div className="flex items-center gap-1 font-mono text-[11px] text-slate-600 dark:text-slate-400">
                             <span>1 {u.unit_name} =</span>
-                            <input
-                              type="number"
-                              min="1"
+                            <NumericInput
                               value={u.conversion_factor}
-                              onChange={(e) => {
-                                const val = Number(e.target.value);
+                              allowDecimals={false}
+                              min={1}
+                              onChange={(val) => {
                                 setSellingUnits(
                                   sellingUnits.map((item, i) =>
                                     i === idx ? { ...item, conversion_factor: val } : item
@@ -1054,12 +1050,10 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
                           {/* Price input */}
                           <div className="flex items-center gap-1">
                             <span className="text-slate-400 text-[11px]">السعر:</span>
-                            <input
-                              type="number"
-                              min="0"
+                            <NumericInput
                               value={u.selling_price}
-                              onChange={(e) => {
-                                const val = Number(e.target.value);
+                              min={0}
+                              onChange={(val) => {
                                 setSellingUnits(
                                   sellingUnits.map((item, i) =>
                                     i === idx ? { ...item, selling_price: val } : item
@@ -1163,11 +1157,11 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                     حد النواقص الأدنى (Min Stock) بالـ {baseUnit}
                   </label>
-                  <input
-                    type="number"
-                    min="0"
+                  <NumericInput
                     value={minStockLevel}
-                    onChange={(e) => setMinStockLevel(Number(e.target.value))}
+                    allowDecimals={false}
+                    min={0}
+                    onChange={setMinStockLevel}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-xs"
                   />
                 </div>
@@ -1177,11 +1171,11 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                     نقطة إعادة الطلب (Reorder Level) بالـ {baseUnit}
                   </label>
-                  <input
-                    type="number"
-                    min="0"
+                  <NumericInput
                     value={reorderLevel}
-                    onChange={(e) => setReorderLevel(Number(e.target.value))}
+                    allowDecimals={false}
+                    min={0}
+                    onChange={setReorderLevel}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-xs"
                   />
                 </div>

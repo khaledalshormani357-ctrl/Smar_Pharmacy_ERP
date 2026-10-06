@@ -112,10 +112,10 @@ export const NumericInput: React.FC<NumericInputProps> = ({
     onChange(parsed);
   };
 
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (event: React.FormEvent<HTMLInputElement>) => {
     isEditingRef.current = true;
-    const rawVal = event.target.value;
-    const currentCursor = event.target.selectionStart;
+    const rawVal = event.currentTarget.value;
+    const currentCursor = event.currentTarget.selectionStart;
     applyNewValue(rawVal, currentCursor);
   };
 
@@ -155,6 +155,7 @@ export const NumericInput: React.FC<NumericInputProps> = ({
         value={draft}
         onFocus={handleFocus}
         onChange={handleChange}
+        onInput={handleChange}
         onBlur={handleBlur}
         placeholder={placeholder}
         dir="ltr"

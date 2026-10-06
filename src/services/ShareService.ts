@@ -23,11 +23,17 @@ export class ShareService {
    */
   private static uint8ArrayToBase64(bytes: Uint8Array): string {
     let binary = '';
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      const chunk = bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length));
+      binary += String.fromCharCode(...chunk);
     }
     return btoa(binary);
+  }
+
+  private static safeFileName(fileName: string): string {
+    const cleaned = fileName.replace(/[^\w\-.\u0600-\u06ff ]+/g, '_').trim();
+    return `${cleaned || 'smart-pharmacy-document'}_${Date.now()}.pdf`;
   }
 
   /**
@@ -44,15 +50,16 @@ export class ShareService {
     // 1. Try Native Android Share Intent via Capacitor
     if (this.isNativeAndroid()) {
       try {
+        const nativeFileName = this.safeFileName(fileName);
         const base64Data = this.uint8ArrayToBase64(pdfBytes);
         const savedFile = await Filesystem.writeFile({
-          path: fileName,
+          path: nativeFileName,
           data: base64Data,
           directory: Directory.Cache
         });
 
         const uriResult = await Filesystem.getUri({
-          path: fileName,
+          path: nativeFileName,
           directory: Directory.Cache
         });
 
