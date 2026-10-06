@@ -237,7 +237,7 @@ export class NetworkStatusServiceClass {
     }
 
     // Default canonical production cloud backend
-    return 'https://smart-pharmacy-erp-api.onrender.com';
+    return 'https://smar-pharmacy-erp.khaledalshormani357.workers.dev';
   }
 
   /**
