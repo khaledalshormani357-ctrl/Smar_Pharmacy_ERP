@@ -74,7 +74,7 @@ async function handleOcr(request: Request, env: Env): Promise<Response> {
     parsed = cleanJson(result.text);
   } catch {
     // Some provider responses occasionally ignore JSON mode; retry once with the lightweight model.
-    const retry = await callGemini(env, FALLBACK_MODEL, contents, { temperature: 0.1, maxOutputTokens: 3000, responseMimeType: 'application/json' });
+    const retry = await gemini(env, FALLBACK_MODEL, contents, { temperature: 0.1, maxOutputTokens: 3000, responseMimeType: 'application/json' });
     result = { text: retry, model: FALLBACK_MODEL };
     parsed = cleanJson(result.text);
   }
