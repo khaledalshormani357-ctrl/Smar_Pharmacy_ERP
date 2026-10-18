@@ -1,14 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { db } from './db/sqlite';
 import { PasswordSecurity } from './utils/security';
 import { AppHeader } from './components/navigation/AppHeader';
 import { BottomNav, TabKey } from './components/navigation/BottomNav';
-import { DashboardView } from './components/dashboard/DashboardView';
-import { POSView } from './components/pos/POSView';
-import { InventoryView } from './components/inventory/InventoryView';
-import { PurchasesView } from './components/purchases/PurchasesView';
-import { MoreView } from './components/more/MoreView';
-import { ReportsView } from './components/more/ReportsView';
 import { QuickProductSearchModal } from './components/modals/QuickProductSearchModal';
 import { QuickVoucherModal } from './components/modals/QuickVoucherModal';
 import { SmartAssistantModal } from './components/modals/SmartAssistantModal';
@@ -30,6 +24,14 @@ import { Bot, Sparkles, AlertCircle } from 'lucide-react';
 import { BackNavigationService } from './services/BackNavigationService';
 import { useBackHandler } from './hooks/useBackHandler';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+
+// Load large business screens on demand to keep the initial mobile bundle small.
+const DashboardView = lazy(() => import('./components/dashboard/DashboardView').then((m) => ({ default: m.DashboardView })));
+const POSView = lazy(() => import('./components/pos/POSView').then((m) => ({ default: m.POSView })));
+const InventoryView = lazy(() => import('./components/inventory/InventoryView').then((m) => ({ default: m.InventoryView })));
+const PurchasesView = lazy(() => import('./components/purchases/PurchasesView').then((m) => ({ default: m.PurchasesView })));
+const MoreView = lazy(() => import('./components/more/MoreView').then((m) => ({ default: m.MoreView })));
+const ReportsView = lazy(() => import('./components/more/ReportsView').then((m) => ({ default: m.ReportsView })));
 
 function getSafeUsers(): User[] {
   try {
@@ -347,6 +349,7 @@ export function App() {
       {/* Main Screen Views */}
       <main className="w-full max-w-lg mx-auto md:max-w-5xl px-3 sm:px-4 py-4 pb-28 sm:pb-28">
         <ErrorBoundary title="خطأ في تحميل الشاشة الحالية" subTitle="تم احتواء الخطأ البرمجي بأمان لمنع انهيار التطبيق.">
+          <Suspense fallback={<div className="mx-auto flex min-h-48 w-full max-w-lg items-center justify-center p-6" role="status" aria-live="polite"><div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><span className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" /><span>جارٍ تحميل الشاشة…</span></div></div>}>
           {currentTab === 'dashboard' && (
             <DashboardView
               onNavigateToPOS={() => setCurrentTab('pos')}
@@ -378,6 +381,7 @@ export function App() {
           {currentTab === 'reports' && <ReportsView />}
 
           {currentTab === 'more' && <MoreView currentUser={currentUser} onOpenQuickSearch={() => setShowQuickSearch(true)} onOpenQuickVoucher={() => setShowQuickVoucher(true)} />}
+          </Suspense>
         </ErrorBoundary>
       </main>
 
