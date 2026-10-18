@@ -115,7 +115,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }
 
   return (
-    <div className="p-4 space-y-4 max-w-lg mx-auto md:max-w-2xl pb-24">
+    <div className="w-full min-w-0 p-3 sm:p-4 space-y-4 max-w-lg mx-auto md:max-w-2xl pb-24">
       {/* Quick Action Top Banner */}
       <div className="bg-gradient-to-l from-blue-600 to-indigo-700 rounded-3xl p-5 text-white shadow-lg shadow-blue-500/20">
         <div className="flex items-center justify-between">
