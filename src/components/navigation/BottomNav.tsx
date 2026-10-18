@@ -28,7 +28,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, onSelectTab, c
     >
       <div className="mx-auto flex h-[62px] max-w-lg items-stretch justify-around px-1">
         {items.map(({ key, label, Icon }) => {
-          const active = currentTab === key;
+          const active = currentTab === key || (key === 'more' && currentTab === 'inventory');
           return (
             <button
               key={key}
