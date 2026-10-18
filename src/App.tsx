@@ -84,13 +84,14 @@ export function App() {
 
   useEffect(() => {
     const unsub = db.subscribe(() => {
-      const nextProfile = db.getState()?.profile ?? profile;
-      setProfile(nextProfile);
+      // Keep the subscription stable while profile data changes; otherwise each
+      // profile update tears down and recreates the database listener.
+      setProfile((currentProfile) => db.getState()?.profile ?? currentProfile);
       const users = getSafeUsers();
       setCurrentUser(users[0] ?? null);
     });
     return unsub;
-  }, [profile]);
+  }, []);
 
   // Initialize Android & Web Back Navigation Policy
   useEffect(() => {
