@@ -8,6 +8,7 @@ import { POSView } from './components/pos/POSView';
 import { InventoryView } from './components/inventory/InventoryView';
 import { PurchasesView } from './components/purchases/PurchasesView';
 import { MoreView } from './components/more/MoreView';
+import { ReportsView } from './components/more/ReportsView';
 import { QuickProductSearchModal } from './components/modals/QuickProductSearchModal';
 import { QuickVoucherModal } from './components/modals/QuickVoucherModal';
 import { SmartAssistantModal } from './components/modals/SmartAssistantModal';
@@ -343,13 +344,13 @@ export function App() {
       />
 
       {/* Main Screen Views */}
-      <main className="w-full max-w-lg mx-auto md:max-w-5xl px-3 sm:px-4 py-4">
+      <main className="w-full max-w-lg mx-auto md:max-w-5xl px-3 sm:px-4 py-4 pb-28 sm:pb-28">
         <ErrorBoundary title="خطأ في تحميل الشاشة الحالية" subTitle="تم احتواء الخطأ البرمجي بأمان لمنع انهيار التطبيق.">
           {currentTab === 'dashboard' && (
             <QuickServicesView
               currentUser={currentUser}
               onNavigate={(tab) => {
-                if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'more') {
+                if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'reports' || tab === 'more') {
                   setCurrentTab(tab);
                 } else {
                   setCurrentTab('dashboard');
@@ -370,6 +371,8 @@ export function App() {
           {currentTab === 'inventory' && <InventoryView />}
 
           {currentTab === 'purchases' && <PurchasesView currentUser={currentUser} />}
+
+          {currentTab === 'reports' && <ReportsView />}
 
           {currentTab === 'more' && <MoreView currentUser={currentUser} />}
         </ErrorBoundary>
