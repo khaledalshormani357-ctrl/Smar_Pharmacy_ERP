@@ -377,7 +377,7 @@ export function App() {
 
           {currentTab === 'reports' && <ReportsView />}
 
-          {currentTab === 'more' && <MoreView currentUser={currentUser} />}
+          {currentTab === 'more' && <MoreView currentUser={currentUser} onOpenQuickSearch={() => setShowQuickSearch(true)} onOpenQuickVoucher={() => setShowQuickVoucher(true)} />}
         </ErrorBoundary>
       </main>
 
