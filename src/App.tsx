@@ -3,22 +3,6 @@ import { db } from './db/sqlite';
 import { PasswordSecurity } from './utils/security';
 import { AppHeader } from './components/navigation/AppHeader';
 import { BottomNav, TabKey } from './components/navigation/BottomNav';
-import { QuickProductSearchModal } from './components/modals/QuickProductSearchModal';
-import { QuickVoucherModal } from './components/modals/QuickVoucherModal';
-import { SmartAssistantModal } from './components/modals/SmartAssistantModal';
-import { ApkDownloadModal } from './components/modals/ApkDownloadModal';
-import { AndroidNavigationDrawer } from './components/navigation/AndroidNavigationDrawer';
-import { ReturnsHubModal } from './components/returns/ReturnsHubModal';
-import { InvoicesArchiveView } from './components/more/InvoicesArchiveView';
-import { BatchAdjustmentModal } from './components/modals/BatchAdjustmentModal';
-import { UniversalOpeningStockModal } from './components/modals/UniversalOpeningStockModal';
-import { CustomerAccountsModal } from './components/modals/CustomerAccountsModal';
-import { SupplierAccountsModal } from './components/modals/SupplierAccountsModal';
-import { ExpenseAccountsModal } from './components/modals/ExpenseAccountsModal';
-import { CashboxMovementsModal } from './components/modals/CashboxMovementsModal';
-import { DeviceShiftModal } from './components/modals/DeviceShiftModal';
-import { CatalogImportModal } from './components/modals/CatalogImportModal';
-import { LicenseActivationModal } from './components/modals/LicenseActivationModal';
 import { User, PharmacyProfile } from './types';
 import { Bot, Sparkles, AlertCircle } from 'lucide-react';
 import { BackNavigationService } from './services/BackNavigationService';
@@ -32,6 +16,22 @@ const InventoryView = lazy(() => import('./components/inventory/InventoryView').
 const PurchasesView = lazy(() => import('./components/purchases/PurchasesView').then((m) => ({ default: m.PurchasesView })));
 const MoreView = lazy(() => import('./components/more/MoreView').then((m) => ({ default: m.MoreView })));
 const ReportsView = lazy(() => import('./components/more/ReportsView').then((m) => ({ default: m.ReportsView })));
+const QuickProductSearchModal = lazy(() => import('./components/modals/QuickProductSearchModal').then((m) => ({ default: m.QuickProductSearchModal })));
+const QuickVoucherModal = lazy(() => import('./components/modals/QuickVoucherModal').then((m) => ({ default: m.QuickVoucherModal })));
+const SmartAssistantModal = lazy(() => import('./components/modals/SmartAssistantModal').then((m) => ({ default: m.SmartAssistantModal })));
+const ApkDownloadModal = lazy(() => import('./components/modals/ApkDownloadModal').then((m) => ({ default: m.ApkDownloadModal })));
+const AndroidNavigationDrawer = lazy(() => import('./components/navigation/AndroidNavigationDrawer').then((m) => ({ default: m.AndroidNavigationDrawer })));
+const ReturnsHubModal = lazy(() => import('./components/returns/ReturnsHubModal').then((m) => ({ default: m.ReturnsHubModal })));
+const InvoicesArchiveView = lazy(() => import('./components/more/InvoicesArchiveView').then((m) => ({ default: m.InvoicesArchiveView })));
+const BatchAdjustmentModal = lazy(() => import('./components/modals/BatchAdjustmentModal').then((m) => ({ default: m.BatchAdjustmentModal })));
+const UniversalOpeningStockModal = lazy(() => import('./components/modals/UniversalOpeningStockModal').then((m) => ({ default: m.UniversalOpeningStockModal })));
+const CustomerAccountsModal = lazy(() => import('./components/modals/CustomerAccountsModal').then((m) => ({ default: m.CustomerAccountsModal })));
+const SupplierAccountsModal = lazy(() => import('./components/modals/SupplierAccountsModal').then((m) => ({ default: m.SupplierAccountsModal })));
+const ExpenseAccountsModal = lazy(() => import('./components/modals/ExpenseAccountsModal').then((m) => ({ default: m.ExpenseAccountsModal })));
+const CashboxMovementsModal = lazy(() => import('./components/modals/CashboxMovementsModal').then((m) => ({ default: m.CashboxMovementsModal })));
+const DeviceShiftModal = lazy(() => import('./components/modals/DeviceShiftModal').then((m) => ({ default: m.DeviceShiftModal })));
+const CatalogImportModal = lazy(() => import('./components/modals/CatalogImportModal').then((m) => ({ default: m.CatalogImportModal })));
+const LicenseActivationModal = lazy(() => import('./components/modals/LicenseActivationModal').then((m) => ({ default: m.LicenseActivationModal })));
 
 function getSafeUsers(): User[] {
   try {
@@ -411,6 +411,7 @@ export function App() {
         cartCount={0}
       />
 
+      <Suspense fallback={null}>
       {/* Android Navigation Drawer (Side Menu) */}
       <AndroidNavigationDrawer
         isOpen={showDrawer}
@@ -496,6 +497,8 @@ export function App() {
       {activeDrawerModal === 'license' && (
         <LicenseActivationModal onClose={() => setActiveDrawerModal(null)} />
       )}
+
+      </Suspense>
 
       {/* Android Back Navigation Exit Confirmation Toast */}
       {toastMessage && (
