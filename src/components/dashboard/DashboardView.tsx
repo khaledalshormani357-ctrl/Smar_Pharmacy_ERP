@@ -84,9 +84,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const totalCustomerDebts = state.customers.reduce((sum, c) => sum + Math.max(0, c.cached_balance), 0);
     const totalSupplierPayables = state.suppliers.reduce((sum, s) => sum + Math.max(0, s.cached_balance), 0);
 
-    const recentSales = [...state.sales]
-      .sort((a, b) => b.created_at - a.created_at)
-      .slice(0, 5);
+    // Keep only the five newest records in one pass. Sorting a copied
+    // full sales history on every dashboard refresh becomes expensive on large databases.
+    const recentSales = state.sales.reduce<typeof state.sales>((latest, sale) => {
+      const insertAt = latest.findIndex((item) => sale.created_at > item.created_at);
+      if (insertAt === -1) {
+        if (latest.length < 5) latest.push(sale);
+      } else {
+        latest.splice(insertAt, 0, sale);
+        if (latest.length > 5) latest.pop();
+      }
+      return latest;
+    }, []);
 
     return {
       todaySalesTotal,
