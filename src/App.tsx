@@ -426,7 +426,7 @@ export function App() {
           currentUser={currentUser}
           currentScreen={currentTab}
           onNavigate={(tab) => {
-            if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'more') {
+            if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'reports' || tab === 'more') {
               setCurrentTab(tab);
             } else {
               setCurrentTab('dashboard');
