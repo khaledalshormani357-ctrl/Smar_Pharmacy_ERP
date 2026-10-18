@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Wallet,
+  Search,
   ArrowDownLeft,
   ArrowUpRight,
   Receipt,
@@ -48,9 +49,11 @@ import { InventoryView } from '../inventory/InventoryView';
 
 interface MoreViewProps {
   currentUser: User;
+  onOpenQuickSearch?: () => void;
+  onOpenQuickVoucher?: () => void;
 }
 
-export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
+export const MoreView: React.FC<MoreViewProps> = ({ currentUser, onOpenQuickSearch, onOpenQuickVoucher }) => {
   const [activeSection, setActiveSection] = useState<
     'cash' | 'inventory' | 'invoices' | 'customers' | 'suppliers' | 'categories' | 'reports' | 'users' | 'settings' | 'backup'
   >('cash');
@@ -471,6 +474,24 @@ export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
           )}
           <span>{actionMessage.text}</span>
+        </div>
+      )}
+
+      {/* Quick actions remain available after simplifying the bottom navigation. */}
+      {(onOpenQuickSearch || onOpenQuickVoucher) && (
+        <div className="grid grid-cols-2 gap-2">
+          {onOpenQuickSearch && (
+            <button type="button" onClick={onOpenQuickSearch} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 shadow-xs transition-colors hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+              <Search className="h-4 w-4 text-emerald-600" />
+              <span>بحث سريع عن دواء</span>
+            </button>
+          )}
+          {onOpenQuickVoucher && (
+            <button type="button" onClick={onOpenQuickVoucher} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 shadow-xs transition-colors hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+              <FileSpreadsheet className="h-4 w-4 text-blue-600" />
+              <span>سند مالي جديد</span>
+            </button>
+          )}
         </div>
       )}
 
