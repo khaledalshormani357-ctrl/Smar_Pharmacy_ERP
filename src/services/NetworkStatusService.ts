@@ -272,6 +272,17 @@ export class NetworkStatusServiceClass {
   }
 
   /**
+   * Resolves OCR/status requests directly to the Cloudflare Worker by default.
+   * An explicitly configured API base URL still takes precedence.
+   */
+  public resolveCloudOcrEndpoint(relativePath: string): string {
+    const cleanPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
+    const configuredBase = this.getApiBaseUrl();
+    const baseUrl = configuredBase || 'https://smar-pharmacy-erp.khaledalshormani357.workers.dev';
+    return `${baseUrl}${cleanPath}`;
+  }
+
+  /**
    * Deep Reachability Check specifically for the Backend Server API
    * Distinguishes between General Internet Online and API Unreachable
    */
