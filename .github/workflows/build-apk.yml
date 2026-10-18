@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+      - feature/pharmacyaccounts-mobile-navigation
   workflow_dispatch:
 
 permissions:
@@ -27,6 +28,12 @@ jobs:
 
       - name: Install Web Dependencies
         run: npm ci || npm install
+
+      - name: TypeScript Check
+        run: npm run lint
+
+      - name: Run Automated Regression Tests
+        run: npm test
 
       - name: Build Web Assets
         run: npm run build
@@ -123,7 +130,7 @@ jobs:
           retention-days: 30
 
       - name: Create GitHub Release with Direct APK Download
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.1-phase10-print-input-apk
