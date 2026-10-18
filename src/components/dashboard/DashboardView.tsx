@@ -34,13 +34,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const handlePOS = onNavigateToPOS || (() => onNavigate?.('pos'));
   const handleInventory = onNavigateToInventory || (() => onNavigate?.('inventory'));
   const handlePurchases = onNavigateToPurchases || (() => onNavigate?.('purchases'));
-  const [data, setData] = useState(computeMetrics());
+  const [data, setData] = useState(computeMetrics);
 
   useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     const unsub = db.subscribe(() => {
-      setData(computeMetrics());
+      // Coalesce bursts of writes (e.g. importing a large catalog) so the dashboard
+      // does not rescan inventory repeatedly during a transaction burst.
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshTimer = undefined;
+        setData(computeMetrics());
+      }, 300);
     });
-    return unsub;
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      unsub();
+    };
   }, []);
 
   function computeMetrics() {
