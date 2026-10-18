@@ -357,7 +357,7 @@ export const ReportsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="w-full min-w-0 max-w-4xl mx-auto space-y-4" dir="rtl">
       {/* Top Main Navigation Categories */}
       <div className="grid grid-cols-5 gap-1 bg-slate-100 p-1 rounded-2xl text-xs font-bold text-slate-600">
         <button
