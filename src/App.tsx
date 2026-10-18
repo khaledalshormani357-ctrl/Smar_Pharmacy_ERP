@@ -3,7 +3,7 @@ import { db } from './db/sqlite';
 import { PasswordSecurity } from './utils/security';
 import { AppHeader } from './components/navigation/AppHeader';
 import { BottomNav, TabKey } from './components/navigation/BottomNav';
-import { QuickServicesView } from './components/dashboard/QuickServicesView';
+import { DashboardView } from './components/dashboard/DashboardView';
 import { POSView } from './components/pos/POSView';
 import { InventoryView } from './components/inventory/InventoryView';
 import { PurchasesView } from './components/purchases/PurchasesView';
@@ -347,11 +347,13 @@ export function App() {
       <main className="w-full max-w-lg mx-auto md:max-w-5xl px-3 sm:px-4 py-4 pb-28 sm:pb-28">
         <ErrorBoundary title="خطأ في تحميل الشاشة الحالية" subTitle="تم احتواء الخطأ البرمجي بأمان لمنع انهيار التطبيق.">
           {currentTab === 'dashboard' && (
-            <QuickServicesView
-              currentUser={currentUser}
+            <DashboardView
+              onNavigateToPOS={() => setCurrentTab('pos')}
+              onNavigateToInventory={() => setCurrentTab('more')}
+              onNavigateToPurchases={() => setCurrentTab('purchases')}
               onNavigate={(tab) => {
                 if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'reports' || tab === 'more') {
-                  setCurrentTab(tab);
+                  setCurrentTab(tab === 'inventory' ? 'more' : tab);
                 } else {
                   setCurrentTab('dashboard');
                 }
