@@ -137,7 +137,7 @@ export const InvoiceScannerTab: React.FC = () => {
   });
 
   React.useEffect(() => {
-    const statusUrl = NetworkStatusService.resolveApiEndpoint('/api/assistant/status');
+    const statusUrl = NetworkStatusService.resolveCloudOcrEndpoint('/api/assistant/status');
 
     fetch(statusUrl)
       .then((r) => {
@@ -156,7 +156,15 @@ export const InvoiceScannerTab: React.FC = () => {
   const handleTestApiReachability = async () => {
     setApiReachability({ checking: true, status: 'UNKNOWN' });
     try {
-      const res = await NetworkStatusService.checkApiReachability(5000);
+      const healthUrl = NetworkStatusService.resolveCloudOcrEndpoint('/api/health');
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      let res: Response;
+      try {
+        res = await fetch(healthUrl, { method: 'GET', cache: 'no-store', signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
       if (res.reachable) {
         setApiReachability({
           checking: false,
@@ -373,7 +381,7 @@ export const InvoiceScannerTab: React.FC = () => {
     setPostingSuccess(null);
     setUploadProgress(0);
 
-    const targetEndpoint = NetworkStatusService.resolveApiEndpoint('/api/gemini/analyze-invoice');
+    const targetEndpoint = NetworkStatusService.resolveCloudOcrEndpoint('/api/gemini/analyze-invoice');
     const isOnline = NetworkStatusService.isOnline();
     const networkStatus = NetworkStatusService.getStatus();
 
