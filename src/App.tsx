@@ -349,11 +349,11 @@ export function App() {
           {currentTab === 'dashboard' && (
             <DashboardView
               onNavigateToPOS={() => setCurrentTab('pos')}
-              onNavigateToInventory={() => setCurrentTab('more')}
+              onNavigateToInventory={() => setCurrentTab('inventory')}
               onNavigateToPurchases={() => setCurrentTab('purchases')}
               onNavigate={(tab) => {
                 if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'reports' || tab === 'more') {
-                  setCurrentTab(tab === 'inventory' ? 'more' : tab);
+                  setCurrentTab(tab);
                 } else {
                   setCurrentTab('dashboard');
                 }
