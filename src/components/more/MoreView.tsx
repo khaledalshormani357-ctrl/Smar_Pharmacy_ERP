@@ -19,6 +19,7 @@ import {
   Settings,
   UserCog,
   FolderTree,
+  Package,
   ArrowLeftRight,
   Archive,
   Smartphone,
@@ -43,6 +44,7 @@ import { UsersView } from './UsersView';
 import { CategoriesView } from './CategoriesView';
 import { InvoicesArchiveView } from './InvoicesArchiveView';
 import { ApkDownloadModal } from '../modals/ApkDownloadModal';
+import { InventoryView } from '../inventory/InventoryView';
 
 interface MoreViewProps {
   currentUser: User;
@@ -50,7 +52,7 @@ interface MoreViewProps {
 
 export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
   const [activeSection, setActiveSection] = useState<
-    'cash' | 'invoices' | 'customers' | 'suppliers' | 'categories' | 'reports' | 'users' | 'settings' | 'backup'
+    'cash' | 'inventory' | 'invoices' | 'customers' | 'suppliers' | 'categories' | 'reports' | 'users' | 'settings' | 'backup'
   >('cash');
   const [cashboxes, setCashboxes] = useState<Cashbox[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -485,6 +487,16 @@ export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
         </button>
 
         <button
+          onClick={() => setActiveSection('inventory')}
+          className={`flex-1 min-w-[95px] py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            activeSection === 'inventory' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Package className="w-4 h-4" />
+          <span>المخزون والأدوية</span>
+        </button>
+
+        <button
           onClick={() => setActiveSection('invoices')}
           className={`flex-1 min-w-[95px] py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
             activeSection === 'invoices' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
@@ -573,6 +585,8 @@ export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
           <span>تطبيق APK</span>
         </button>
       </div>
+
+      {activeSection === 'inventory' && <InventoryView />}
 
       {/* SECTION 1: CASHBOX & EXPENSES */}
       {activeSection === 'cash' && (
