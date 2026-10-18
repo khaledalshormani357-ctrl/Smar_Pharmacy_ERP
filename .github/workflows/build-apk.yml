@@ -28,6 +28,12 @@ jobs:
       - name: Install Web Dependencies
         run: npm ci || npm install
 
+      - name: TypeScript Check
+        run: npm run lint
+
+      - name: Run Automated Regression Tests
+        run: npm test
+
       - name: Build Web Assets
         run: npm run build
 
