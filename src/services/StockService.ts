@@ -306,6 +306,9 @@ export class StockService {
     if (!payload.reason || !payload.reason.trim()) {
       throw new Error('سبب التعديل المخزني إلزامي.');
     }
+    if (!Number.isFinite(payload.newQuantityBase)) {
+      throw new Error('يجب إدخال كمية مخزنية رقمية وصالحة.');
+    }
     if (payload.newQuantityBase < 0) {
       throw new Error('لا يمكن أن يكون رصيد الدفعة سالباً.');
     }
