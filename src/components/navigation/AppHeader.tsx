@@ -27,10 +27,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const { isDark, toggleTheme } = useTheme();
 
   return (
-    <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 px-3 sm:px-4 py-2.5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200">
-      <div className="flex items-center justify-between gap-3 max-w-lg mx-auto md:max-w-4xl">
+    <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 px-2.5 sm:px-4 py-2 sm:py-2.5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.3)] transition-colors duration-200">
+      <div className="flex min-w-0 items-center justify-between gap-2 sm:gap-3 max-w-lg mx-auto md:max-w-4xl">
         {/* Drawer Menu Button & Profile Branding */}
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
           {onOpenDrawer && (
             <button
               id="btn-header-drawer"
@@ -44,7 +44,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             </button>
           )}
 
-          <AppBrandIcon className="w-9 h-9 sm:w-10 sm:h-10 shrink-0" />
+          <AppBrandIcon className="h-8 w-8 shrink-0 sm:h-10 sm:w-10" />
           <div className="min-w-0">
             <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-slate-100 truncate leading-tight">
               {profile.name_ar || 'صيدليتي الذكية'}
@@ -57,7 +57,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         </div>
 
         {/* Quick Header Actions */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
           <NetworkIndicator compact />
 
           {onOpenApkModal && (
@@ -95,7 +95,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             id="btn-header-refresh"
             onClick={onRefresh}
             title="تحديث ومزامنة البيانات"
-            className="p-2 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 rounded-xl transition-colors active:scale-95"
+            className="flex p-1.5 sm:p-2 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 rounded-xl transition-colors active:scale-95"
           >
             <RotateCw className="w-4 h-4" />
           </button>
@@ -104,7 +104,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             id="btn-header-settings"
             onClick={onOpenSettings}
             title="إعدادات النظام"
-            className="p-2 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 rounded-xl transition-colors active:scale-95"
+            className="hidden p-2 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 rounded-xl transition-colors active:scale-95 sm:flex"
           >
             <Settings className="w-4 h-4" />
           </button>
@@ -113,7 +113,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             id="btn-header-lock"
             onClick={onLockSession}
             title="قفل الوردية / تسجيل الخروج"
-            className="p-2 text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors active:scale-95"
+            className="hidden p-2 text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors active:scale-95 sm:flex"
           >
             <Power className="w-4 h-4" />
           </button>

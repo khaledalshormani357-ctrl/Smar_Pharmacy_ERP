@@ -384,7 +384,7 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({ currentUser }) => 
   const netTotalMinor = Math.max(0, subtotalMinor - Money.toMinor(discountVal));
 
   return (
-    <div className="p-4 space-y-4 max-w-lg mx-auto md:max-w-3xl pb-24">
+    <div className="w-full min-w-0 p-3 sm:p-4 space-y-4 max-w-lg mx-auto md:max-w-3xl pb-24">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>

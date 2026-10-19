@@ -225,7 +225,7 @@ export const InventoryView: React.FC = () => {
   };
 
   return (
-    <div className="p-4 space-y-4 max-w-lg mx-auto md:max-w-3xl pb-24">
+    <div className="w-full min-w-0 p-3 sm:p-4 space-y-4 max-w-lg mx-auto md:max-w-3xl pb-24">
       {/* Header & Quick Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
         <div>

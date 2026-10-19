@@ -155,7 +155,6 @@ export const NumericInput: React.FC<NumericInputProps> = ({
         value={draft}
         onFocus={handleFocus}
         onChange={handleChange}
-        onInput={handleChange}
         onBlur={handleBlur}
         placeholder={placeholder}
         dir="ltr"

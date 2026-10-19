@@ -34,13 +34,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const handlePOS = onNavigateToPOS || (() => onNavigate?.('pos'));
   const handleInventory = onNavigateToInventory || (() => onNavigate?.('inventory'));
   const handlePurchases = onNavigateToPurchases || (() => onNavigate?.('purchases'));
-  const [data, setData] = useState(computeMetrics());
+  const [data, setData] = useState(computeMetrics);
 
   useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     const unsub = db.subscribe(() => {
-      setData(computeMetrics());
+      // Coalesce bursts of writes (e.g. importing a large catalog) so the dashboard
+      // does not rescan inventory repeatedly during a transaction burst.
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshTimer = undefined;
+        setData(computeMetrics());
+      }, 300);
     });
-    return unsub;
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      unsub();
+    };
   }, []);
 
   function computeMetrics() {
@@ -74,9 +84,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const totalCustomerDebts = state.customers.reduce((sum, c) => sum + Math.max(0, c.cached_balance), 0);
     const totalSupplierPayables = state.suppliers.reduce((sum, s) => sum + Math.max(0, s.cached_balance), 0);
 
-    const recentSales = [...state.sales]
-      .sort((a, b) => b.created_at - a.created_at)
-      .slice(0, 5);
+    // Keep only the five newest records in one pass. Sorting a copied
+    // full sales history on every dashboard refresh becomes expensive on large databases.
+    const recentSales = state.sales.reduce<typeof state.sales>((latest, sale) => {
+      const insertAt = latest.findIndex((item) => sale.created_at > item.created_at);
+      if (insertAt === -1) {
+        if (latest.length < 5) latest.push(sale);
+      } else {
+        latest.splice(insertAt, 0, sale);
+        if (latest.length > 5) latest.pop();
+      }
+      return latest;
+    }, []);
 
     return {
       todaySalesTotal,
@@ -96,7 +115,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }
 
   return (
-    <div className="p-4 space-y-4 max-w-lg mx-auto md:max-w-2xl pb-24">
+    <div className="w-full min-w-0 p-3 sm:p-4 space-y-4 max-w-lg mx-auto md:max-w-2xl pb-24">
       {/* Quick Action Top Banner */}
       <div className="bg-gradient-to-l from-blue-600 to-indigo-700 rounded-3xl p-5 text-white shadow-lg shadow-blue-500/20">
         <div className="flex items-center justify-between">

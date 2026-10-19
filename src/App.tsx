@@ -1,34 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { db } from './db/sqlite';
 import { PasswordSecurity } from './utils/security';
 import { AppHeader } from './components/navigation/AppHeader';
 import { BottomNav, TabKey } from './components/navigation/BottomNav';
-import { QuickServicesView } from './components/dashboard/QuickServicesView';
-import { POSView } from './components/pos/POSView';
-import { InventoryView } from './components/inventory/InventoryView';
-import { PurchasesView } from './components/purchases/PurchasesView';
-import { MoreView } from './components/more/MoreView';
-import { QuickProductSearchModal } from './components/modals/QuickProductSearchModal';
-import { QuickVoucherModal } from './components/modals/QuickVoucherModal';
-import { SmartAssistantModal } from './components/modals/SmartAssistantModal';
-import { ApkDownloadModal } from './components/modals/ApkDownloadModal';
-import { AndroidNavigationDrawer } from './components/navigation/AndroidNavigationDrawer';
-import { ReturnsHubModal } from './components/returns/ReturnsHubModal';
-import { InvoicesArchiveView } from './components/more/InvoicesArchiveView';
-import { BatchAdjustmentModal } from './components/modals/BatchAdjustmentModal';
-import { UniversalOpeningStockModal } from './components/modals/UniversalOpeningStockModal';
-import { CustomerAccountsModal } from './components/modals/CustomerAccountsModal';
-import { SupplierAccountsModal } from './components/modals/SupplierAccountsModal';
-import { ExpenseAccountsModal } from './components/modals/ExpenseAccountsModal';
-import { CashboxMovementsModal } from './components/modals/CashboxMovementsModal';
-import { DeviceShiftModal } from './components/modals/DeviceShiftModal';
-import { CatalogImportModal } from './components/modals/CatalogImportModal';
-import { LicenseActivationModal } from './components/modals/LicenseActivationModal';
 import { User, PharmacyProfile } from './types';
 import { Bot, Sparkles, AlertCircle } from 'lucide-react';
 import { BackNavigationService } from './services/BackNavigationService';
 import { useBackHandler } from './hooks/useBackHandler';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+
+// Load large business screens on demand to keep the initial mobile bundle small.
+const DashboardView = lazy(() => import('./components/dashboard/DashboardView').then((m) => ({ default: m.DashboardView })));
+const POSView = lazy(() => import('./components/pos/POSView').then((m) => ({ default: m.POSView })));
+const InventoryView = lazy(() => import('./components/inventory/InventoryView').then((m) => ({ default: m.InventoryView })));
+const PurchasesView = lazy(() => import('./components/purchases/PurchasesView').then((m) => ({ default: m.PurchasesView })));
+const MoreView = lazy(() => import('./components/more/MoreView').then((m) => ({ default: m.MoreView })));
+const ReportsView = lazy(() => import('./components/more/ReportsView').then((m) => ({ default: m.ReportsView })));
+const QuickProductSearchModal = lazy(() => import('./components/modals/QuickProductSearchModal').then((m) => ({ default: m.QuickProductSearchModal })));
+const QuickVoucherModal = lazy(() => import('./components/modals/QuickVoucherModal').then((m) => ({ default: m.QuickVoucherModal })));
+const SmartAssistantModal = lazy(() => import('./components/modals/SmartAssistantModal').then((m) => ({ default: m.SmartAssistantModal })));
+const ApkDownloadModal = lazy(() => import('./components/modals/ApkDownloadModal').then((m) => ({ default: m.ApkDownloadModal })));
+const AndroidNavigationDrawer = lazy(() => import('./components/navigation/AndroidNavigationDrawer').then((m) => ({ default: m.AndroidNavigationDrawer })));
+const ReturnsHubModal = lazy(() => import('./components/returns/ReturnsHubModal').then((m) => ({ default: m.ReturnsHubModal })));
+const InvoicesArchiveView = lazy(() => import('./components/more/InvoicesArchiveView').then((m) => ({ default: m.InvoicesArchiveView })));
+const BatchAdjustmentModal = lazy(() => import('./components/modals/BatchAdjustmentModal').then((m) => ({ default: m.BatchAdjustmentModal })));
+const UniversalOpeningStockModal = lazy(() => import('./components/modals/UniversalOpeningStockModal').then((m) => ({ default: m.UniversalOpeningStockModal })));
+const CustomerAccountsModal = lazy(() => import('./components/modals/CustomerAccountsModal').then((m) => ({ default: m.CustomerAccountsModal })));
+const SupplierAccountsModal = lazy(() => import('./components/modals/SupplierAccountsModal').then((m) => ({ default: m.SupplierAccountsModal })));
+const ExpenseAccountsModal = lazy(() => import('./components/modals/ExpenseAccountsModal').then((m) => ({ default: m.ExpenseAccountsModal })));
+const CashboxMovementsModal = lazy(() => import('./components/modals/CashboxMovementsModal').then((m) => ({ default: m.CashboxMovementsModal })));
+const DeviceShiftModal = lazy(() => import('./components/modals/DeviceShiftModal').then((m) => ({ default: m.DeviceShiftModal })));
+const CatalogImportModal = lazy(() => import('./components/modals/CatalogImportModal').then((m) => ({ default: m.CatalogImportModal })));
+const LicenseActivationModal = lazy(() => import('./components/modals/LicenseActivationModal').then((m) => ({ default: m.LicenseActivationModal })));
 
 function getSafeUsers(): User[] {
   try {
@@ -83,13 +86,14 @@ export function App() {
 
   useEffect(() => {
     const unsub = db.subscribe(() => {
-      const nextProfile = db.getState()?.profile ?? profile;
-      setProfile(nextProfile);
+      // Keep the subscription stable while profile data changes; otherwise each
+      // profile update tears down and recreates the database listener.
+      setProfile((currentProfile) => db.getState()?.profile ?? currentProfile);
       const users = getSafeUsers();
       setCurrentUser(users[0] ?? null);
     });
     return unsub;
-  }, [profile]);
+  }, []);
 
   // Initialize Android & Web Back Navigation Policy
   useEffect(() => {
@@ -343,13 +347,16 @@ export function App() {
       />
 
       {/* Main Screen Views */}
-      <main className="w-full max-w-lg mx-auto md:max-w-5xl px-3 sm:px-4 py-4">
+      <main className="w-full max-w-lg mx-auto md:max-w-5xl px-3 sm:px-4 py-4 pb-28 sm:pb-28">
         <ErrorBoundary title="خطأ في تحميل الشاشة الحالية" subTitle="تم احتواء الخطأ البرمجي بأمان لمنع انهيار التطبيق.">
+          <Suspense fallback={<div className="mx-auto flex min-h-48 w-full max-w-lg items-center justify-center p-6" role="status" aria-live="polite"><div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><span className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" /><span>جارٍ تحميل الشاشة…</span></div></div>}>
           {currentTab === 'dashboard' && (
-            <QuickServicesView
-              currentUser={currentUser}
+            <DashboardView
+              onNavigateToPOS={() => setCurrentTab('pos')}
+              onNavigateToInventory={() => setCurrentTab('inventory')}
+              onNavigateToPurchases={() => setCurrentTab('purchases')}
               onNavigate={(tab) => {
-                if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'more') {
+                if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'reports' || tab === 'more') {
                   setCurrentTab(tab);
                 } else {
                   setCurrentTab('dashboard');
@@ -371,7 +378,10 @@ export function App() {
 
           {currentTab === 'purchases' && <PurchasesView currentUser={currentUser} />}
 
-          {currentTab === 'more' && <MoreView currentUser={currentUser} />}
+          {currentTab === 'reports' && <ReportsView />}
+
+          {currentTab === 'more' && <MoreView currentUser={currentUser} onOpenQuickSearch={() => setShowQuickSearch(true)} onOpenQuickVoucher={() => setShowQuickVoucher(true)} />}
+          </Suspense>
         </ErrorBoundary>
       </main>
 
@@ -401,6 +411,7 @@ export function App() {
         cartCount={0}
       />
 
+      <Suspense fallback={null}>
       {/* Android Navigation Drawer (Side Menu) */}
       <AndroidNavigationDrawer
         isOpen={showDrawer}
@@ -423,7 +434,7 @@ export function App() {
           currentUser={currentUser}
           currentScreen={currentTab}
           onNavigate={(tab) => {
-            if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'more') {
+            if (tab === 'pos' || tab === 'inventory' || tab === 'purchases' || tab === 'reports' || tab === 'more') {
               setCurrentTab(tab);
             } else {
               setCurrentTab('dashboard');
@@ -486,6 +497,8 @@ export function App() {
       {activeDrawerModal === 'license' && (
         <LicenseActivationModal onClose={() => setActiveDrawerModal(null)} />
       )}
+
+      </Suspense>
 
       {/* Android Back Navigation Exit Confirmation Toast */}
       {toastMessage && (

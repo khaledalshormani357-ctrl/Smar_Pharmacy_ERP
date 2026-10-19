@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Wallet,
+  Search,
   ArrowDownLeft,
   ArrowUpRight,
   Receipt,
@@ -19,6 +20,7 @@ import {
   Settings,
   UserCog,
   FolderTree,
+  Package,
   ArrowLeftRight,
   Archive,
   Smartphone,
@@ -43,14 +45,17 @@ import { UsersView } from './UsersView';
 import { CategoriesView } from './CategoriesView';
 import { InvoicesArchiveView } from './InvoicesArchiveView';
 import { ApkDownloadModal } from '../modals/ApkDownloadModal';
+import { InventoryView } from '../inventory/InventoryView';
 
 interface MoreViewProps {
   currentUser: User;
+  onOpenQuickSearch?: () => void;
+  onOpenQuickVoucher?: () => void;
 }
 
-export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
+export const MoreView: React.FC<MoreViewProps> = ({ currentUser, onOpenQuickSearch, onOpenQuickVoucher }) => {
   const [activeSection, setActiveSection] = useState<
-    'cash' | 'invoices' | 'customers' | 'suppliers' | 'categories' | 'reports' | 'users' | 'settings' | 'backup'
+    'cash' | 'inventory' | 'invoices' | 'customers' | 'suppliers' | 'categories' | 'reports' | 'users' | 'settings' | 'backup'
   >('cash');
   const [cashboxes, setCashboxes] = useState<Cashbox[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -472,6 +477,24 @@ export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
         </div>
       )}
 
+      {/* Quick actions remain available after simplifying the bottom navigation. */}
+      {(onOpenQuickSearch || onOpenQuickVoucher) && (
+        <div className="grid grid-cols-2 gap-2">
+          {onOpenQuickSearch && (
+            <button type="button" onClick={onOpenQuickSearch} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 shadow-xs transition-colors hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+              <Search className="h-4 w-4 text-emerald-600" />
+              <span>بحث سريع عن دواء</span>
+            </button>
+          )}
+          {onOpenQuickVoucher && (
+            <button type="button" onClick={onOpenQuickVoucher} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 shadow-xs transition-colors hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+              <FileSpreadsheet className="h-4 w-4 text-blue-600" />
+              <span>سند مالي جديد</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Main Tab Bar */}
       <div className="flex bg-slate-200/80 p-1 rounded-2xl text-xs font-bold gap-1 overflow-x-auto">
         <button
@@ -482,6 +505,16 @@ export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
         >
           <Wallet className="w-4 h-4" />
           <span>الصندوق والسيولة</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSection('inventory')}
+          className={`flex-1 min-w-[95px] py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            activeSection === 'inventory' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Package className="w-4 h-4" />
+          <span>المخزون والأدوية</span>
         </button>
 
         <button
@@ -573,6 +606,8 @@ export const MoreView: React.FC<MoreViewProps> = ({ currentUser }) => {
           <span>تطبيق APK</span>
         </button>
       </div>
+
+      {activeSection === 'inventory' && <InventoryView />}
 
       {/* SECTION 1: CASHBOX & EXPENSES */}
       {activeSection === 'cash' && (

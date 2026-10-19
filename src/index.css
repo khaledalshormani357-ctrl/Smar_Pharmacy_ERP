@@ -138,3 +138,90 @@
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7), 0 8px 10px -6px rgba(0, 0, 0, 0.7);
   }
 }
+
+
+/* Mobile-first layout safeguards shared by all screens and dialogs. */
+@layer base {
+  html {
+    min-height: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    min-height: 100dvh;
+    margin: 0;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #root {
+    min-height: 100vh;
+    min-height: 100dvh;
+    width: 100%;
+    isolation: isolate;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button {
+    touch-action: manipulation;
+  }
+
+  input,
+  select,
+  textarea {
+    max-width: 100%;
+  }
+
+  @supports (padding: max(0px)) {
+    body {
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+    }
+  }
+
+  @media (max-width: 640px) {
+    .max-w-lg,
+    .max-w-2xl,
+    .max-w-3xl,
+    .max-w-4xl,
+    .max-w-5xl {
+      max-width: 100%;
+    }
+
+    .overflow-x-auto {
+      overscroll-behavior-x: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+      min-width: 0;
+      font-size: 16px;
+    }
+
+    /* Keep long Arabic labels and values from widening the entire viewport. */
+    h1, h2, h3, p, label, td, th {
+      overflow-wrap: anywhere;
+    }
+  }
+}

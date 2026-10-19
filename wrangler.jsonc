@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "smar-pharmacy-erp",
+  "compatibility_date": "2026-10-12",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "preview_urls": true,
+  "previews": {}
+}

@@ -359,7 +359,7 @@ export const POSView: React.FC<POSViewProps> = ({ currentUser, onSaleCompleted }
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] max-w-lg mx-auto md:max-w-3xl bg-slate-50 relative">
+    <div className="flex w-full min-w-0 flex-col h-[calc(100dvh-8rem-env(safe-area-inset-bottom,0px))] min-h-[24rem] max-w-lg mx-auto md:max-w-3xl bg-slate-50 relative overflow-hidden">
       {/* Top Search & Barcode Input Header */}
       <div className="p-3 bg-white border-b border-slate-200 shrink-0 shadow-xs">
         <div className="flex items-center gap-2">

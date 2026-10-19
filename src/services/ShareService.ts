@@ -1,9 +1,7 @@
 // ShareService - Native Android & Cross-Platform Document Sharing
 // Uses @capacitor/share and @capacitor/filesystem on Native Android, with Web Share fallback.
 
-import { ShareOptions, ShareResult, DocumentData } from '../types';
-import { PdfService } from './PdfService';
-import { DocumentService } from './DocumentService';
+import type { ShareOptions, ShareResult, DocumentData } from '../types';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 
@@ -106,6 +104,7 @@ export class ShareService {
     }
 
     // 3. Direct browser download fallback
+    const { PdfService } = await import('./PdfService');
     PdfService.downloadPdf(pdfBytes, fileName);
     return {
       success: true,
@@ -118,6 +117,7 @@ export class ShareService {
    * Convenience method to share a structured DocumentData
    */
   static async shareDocument(doc: DocumentData, format: 'A4' | '80mm' = 'A4'): Promise<ShareResult> {
+    const { DocumentService } = await import('./DocumentService');
     const bytes = await DocumentService.generateDocumentPdf(doc, format);
     const fileName = `${doc.document_number}.pdf`;
     return await this.sharePdf(bytes, fileName, {
