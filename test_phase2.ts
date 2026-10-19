@@ -268,6 +268,26 @@ async function runPharmacyCoreTests() {
   const latestAdjMov = adjMovements[0];
   assert(latestAdjMov.movement_type === 'adjustment_plus' && latestAdjMov.quantity_delta === 5, 'Adjustment movement created with delta +5');
 
+  // Integrity regressions: reject non-finite quantities and unknown batches without corrupting stock.
+  const balanceBeforeInvalidAdjustments = BatchRepository.getById(batchA.id)?.current_quantity;
+  for (const invalidQty of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    try {
+      StockService.adjustStock({ productId: prodId, batchId: batchA.id, newQuantityBase: invalidQty, reason: 'اختبار كمية غير صالحة' });
+      assert(false, 'Non-finite stock adjustment quantity was rejected');
+    } catch (e: any) {
+      assert(e.message.includes('كمية مخزنية رقمية وصالحة'), 'Non-finite stock adjustment quantity rejected with clear error');
+    }
+  }
+  assert(BatchRepository.getById(batchA.id)?.current_quantity === balanceBeforeInvalidAdjustments, 'Rejected non-finite adjustments leave stock unchanged');
+
+  try {
+    StockService.adjustStock({ productId: prodId, batchId: 'missing-batch-for-test', newQuantityBase: 1, reason: 'اختبار دفعة غير موجودة' });
+    assert(false, 'Unknown stock adjustment batch was rejected');
+  } catch (e: any) {
+    assert(e.message.includes('الدفعة المحددة غير موجودة'), 'Unknown stock adjustment batch rejected with clear error');
+  }
+  assert(BatchRepository.getById(batchA.id)?.current_quantity === balanceBeforeInvalidAdjustments, 'Unknown-batch adjustment leaves existing stock unchanged');
+
   // ----------------------------------------------------
   // SECTION 10: STOCK COUNT SESSION WORKFLOW
   // ----------------------------------------------------
