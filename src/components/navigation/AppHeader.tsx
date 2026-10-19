@@ -95,7 +95,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             id="btn-header-refresh"
             onClick={onRefresh}
             title="تحديث ومزامنة البيانات"
-            className="hidden p-2 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 rounded-xl transition-colors active:scale-95 sm:flex"
+            className="flex p-1.5 sm:p-2 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 rounded-xl transition-colors active:scale-95"
           >
             <RotateCw className="w-4 h-4" />
           </button>
