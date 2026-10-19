@@ -1118,6 +1118,18 @@ export const InvoiceScannerTab: React.FC = () => {
                   >
                     حفظ واختبار
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      NetworkStatusService.setCustomApiBaseUrl(null);
+                      setCustomApiUrl('');
+                      void handleTestApiReachability();
+                    }}
+                    className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded font-sans font-bold text-3xs shrink-0"
+                    title="إزالة العنوان المخصص واستخدام عنوان الخادم الافتراضي"
+                  >
+                    استعادة الافتراضي
+                  </button>
                 </div>
               </div>
             )}
